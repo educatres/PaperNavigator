@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.vite/
+.env
+.env.*
+!.env.example
+server/data/
+__參考資料/
