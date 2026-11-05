@@ -111,8 +111,157 @@ export const PASS1_JSON_SCHEMA = {
   required: ['schemaVersion', 'promptVersion', 'title', 'authors', 'year', 'doi', 'oneSentenceTopic', 'researchQuestion', 'field', 'paperType', 'outline', 'fiveCs', 'contributions', 'readingDecision', 'unclearConcepts', 'evidence'],
 } as const
 
+type JsonRecord = Record<string, unknown>
+const FIVE_C_NAMES = ['Category', 'Context', 'Correctness', 'Contributions', 'Clarity'] as const
+
+function record(value: unknown): JsonRecord {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : {}
+}
+
+function first(source: JsonRecord, keys: string[]) {
+  for (const key of keys) if (source[key] !== undefined && source[key] !== null) return source[key]
+  return undefined
+}
+
+function text(value: unknown, fallback = ''): string {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) {
+    const rows = value.map((item) => text(item)).filter(Boolean)
+    if (rows.length) return rows.join('；')
+  }
+  return fallback
+}
+
+function nullableText(value: unknown) {
+  const result = text(value)
+  return result || null
+}
+
+function stringList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((item) => text(item)).filter(Boolean)
+  const single = text(value)
+  return single ? single.split(/\n|;/).map((item) => item.trim()).filter(Boolean) : []
+}
+
+function yearValue(value: unknown) {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(text(value), 10)
+  return Number.isInteger(parsed) && parsed >= 1500 && parsed <= 2200 ? parsed : null
+}
+
+function integerValue(value: unknown) {
+  if (typeof value === 'number' && Number.isInteger(value)) return value
+  const parsed = Number.parseInt(text(value), 10)
+  return Number.isInteger(parsed) ? parsed : null
+}
+
+function evidenceIds(value: unknown) {
+  if (!Array.isArray(value)) return stringList(value)
+  return value.flatMap((item) => {
+    if (typeof item === 'string' || typeof item === 'number') return [String(item)]
+    const id = text(first(record(item), ['id', 'evidenceId', 'sourceId']))
+    return id ? [id] : []
+  })
+}
+
+function normalizeEvidence(value: unknown) {
+  const rows = Array.isArray(value) ? value : []
+  return rows.map((item, index) => {
+    const source = record(item)
+    const explicitIndex = integerValue(first(source, ['pdfPageIndex', 'pageIndex']))
+    const displayPage = integerValue(first(source, ['pdfPageDisplay', 'page', 'pageNumber']))
+    const pageIndex = explicitIndex !== null ? explicitIndex : displayPage !== null && displayPage > 0 ? displayPage - 1 : null
+    const pageDisplay = pageIndex !== null && pageIndex >= 0 ? pageIndex + 1 : null
+    const objectLabel = nullableText(first(source, ['objectLabel', 'label', 'table', 'figure']))
+    const rawType = text(first(source, ['objectType', 'type'])).toLowerCase()
+    const objectType = rawType === 'text' || rawType === 'table' || rawType === 'figure' || rawType === 'unknown'
+      ? rawType
+      : objectLabel?.toLowerCase().startsWith('table') ? 'table'
+        : objectLabel?.toLowerCase().startsWith('figure') ? 'figure' : 'text'
+    const rawStatus = text(first(source, ['verificationStatus', 'status'])).toLowerCase()
+    const verificationStatus = rawStatus === 'matched' || rawStatus === 'mismatch' || rawStatus === 'unverified' ? rawStatus : 'unverified'
+    return {
+      id: text(first(source, ['id', 'evidenceId', 'sourceId']), `evidence-${index + 1}`),
+      paperId: text(source.paperId),
+      pdfPageIndex: pageIndex !== null && pageIndex >= 0 ? pageIndex : null,
+      pdfPageDisplay: pageDisplay,
+      printedPage: nullableText(first(source, ['printedPage', 'printed_page'])),
+      section: nullableText(first(source, ['section', 'sectionName', 'heading'])),
+      objectType,
+      objectLabel,
+      quote: nullableText(first(source, ['quote', 'excerpt', 'text', 'sourceText'])),
+      verificationStatus,
+      notes: nullableText(first(source, ['notes', 'note', 'comment'])),
+    }
+  })
+}
+
+function fiveCSource(source: JsonRecord, name: typeof FIVE_C_NAMES[number]) {
+  const collection = first(source, ['fiveCs', 'fiveC', 'five_c'])
+  if (Array.isArray(collection)) {
+    return record(collection.find((item) => text(first(record(item), ['name', 'category', 'key'])).toLowerCase() === name.toLowerCase()))
+  }
+  const object = record(collection)
+  const match = Object.entries(object).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]
+  if (match !== undefined) return typeof match === 'string' ? { summary: match } : record(match)
+  const direct = Object.entries(source).find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1]
+  return typeof direct === 'string' ? { summary: direct } : record(direct)
+}
+
+function readingDecision(source: JsonRecord) {
+  const raw = first(source, ['readingDecision', 'decision', 'recommendation'])
+  const object = record(raw)
+  const label = text(first(object, ['recommendation', 'decision', 'value']), text(raw)).toLowerCase()
+  const recommendation = label.includes('continue') || label.includes('繼續')
+    ? 'continue' : label.includes('stop') || label.includes('停止') || label.includes('不讀')
+      ? 'stop' : 'later'
+  return {
+    recommendation,
+    reason: text(first(object, ['reason', 'explanation', 'rationale']), text(first(source, ['readingReason', 'decisionReason']), 'AI 未提供明確的閱讀建議理由。')),
+  }
+}
+
+/**
+ * Providers do not all enforce JSON Schema equally. Normalize common compact
+ * or wrapped responses before strict validation without inventing paper facts.
+ */
+export function normalizePass1Response(value: unknown): unknown {
+  const outer = record(value)
+  const wrapped = first(outer, ['result', 'pass1', 'analysis', 'data'])
+  const source = Object.keys(record(wrapped)).length ? record(wrapped) : outer
+  const metadata = record(first(source, ['metadata', 'paperMetadata', 'paper']))
+  const evidence = normalizeEvidence(first(source, ['evidence', 'sourceRefs', 'sources', 'citations']))
+  const fiveCs = FIVE_C_NAMES.map((name) => {
+    const item = fiveCSource(source, name)
+    return {
+      name,
+      summary: text(first(item, ['summary', 'description', 'assessment', 'text', 'value']), '未找到'),
+      evidenceIds: evidenceIds(first(item, ['evidenceIds', 'evidence', 'sourceRefs', 'sources'])),
+    }
+  })
+  const contributions = stringList(first(source, ['contributions', 'mainContributions', 'innovations', 'keyInnovations'])).slice(0, 3)
+  return {
+    schemaVersion: '1.0',
+    promptVersion: 'pass1.v1',
+    title: nullableText(first(source, ['title', 'paperTitle'])) ?? nullableText(first(metadata, ['title', 'paperTitle'])),
+    authors: stringList(first(source, ['authors', 'author'])) .concat(stringList(first(metadata, ['authors', 'author']))).filter((item, index, rows) => rows.indexOf(item) === index),
+    year: yearValue(first(source, ['year', 'publicationYear']) ?? first(metadata, ['year', 'publicationYear'])),
+    doi: nullableText(first(source, ['doi', 'DOI'])) ?? nullableText(first(metadata, ['doi', 'DOI'])),
+    oneSentenceTopic: text(first(source, ['oneSentenceTopic', 'topic', 'oneSentenceSummary', 'summary']), '未找到研究主題').slice(0, 120),
+    researchQuestion: text(first(source, ['researchQuestion', 'researchQuestions', 'question', 'problem']), '未找到研究問題'),
+    field: text(first(source, ['field', 'domain', 'researchField']), '未判定領域'),
+    paperType: text(first(source, ['paperType', 'type', 'category']), '未判定類型'),
+    outline: stringList(first(source, ['outline', 'sections', 'structure', 'paperOutline'])),
+    fiveCs,
+    contributions,
+    readingDecision: readingDecision(source),
+    unclearConcepts: stringList(first(source, ['unclearConcepts', 'conceptsToClarify', 'keyConcepts', 'openQuestions'])),
+    evidence,
+  }
+}
+
 export function validatePass1(value: unknown, pageCount: number, paperId: string): Pass1Result {
-  const parsed = pass1Schema.parse(value)
+  const parsed = pass1Schema.parse(normalizePass1Response(value))
   const evidence = parsed.evidence.map((item) => {
     const pageValid = item.pdfPageIndex === null || item.pdfPageIndex < pageCount
     const displayMatches = item.pdfPageIndex === null
@@ -134,6 +283,13 @@ export function parseJsonResponse(raw: string): unknown {
   const last = cleaned.lastIndexOf('}')
   if (first < 0 || last <= first) throw new Error('API 回應不是可辨識的 JSON。')
   return JSON.parse(cleaned.slice(first, last + 1))
+}
+
+export function schemaValidationMessage(error: unknown, stage: string) {
+  if (!(error instanceof z.ZodError)) return null
+  const fields = [...new Set(error.issues.map((issue) => issue.path.length ? issue.path.join('.') : 'root'))].slice(0, 6)
+  const suffix = error.issues.length > fields.length ? `等 ${error.issues.length} 個欄位` : fields.join('、')
+  return `${stage}的 AI 回傳格式不完整（${suffix}）。系統未覆蓋原有分析；請重試，或改用較擅長結構化輸出的模型。`
 }
 
 const informationStatusSchema = z.enum(['reported', 'inferred', 'not_reported', 'unknown'])

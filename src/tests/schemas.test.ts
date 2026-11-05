@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pass1Schema, validatePass1 } from '../domain/schemas'
+import { normalizePass1Response, pass1Schema, validatePass1 } from '../domain/schemas'
 
 function validPass1() {
   return {
@@ -29,5 +29,41 @@ describe('Pass 1 validation', () => {
     const input = validPass1()
     input.fiveCs.pop()
     expect(() => pass1Schema.parse(input)).toThrow()
+  })
+
+  it('normalizes a compact provider response before strict validation', () => {
+    const compact = {
+      schemaVersion: 1,
+      topic: '精簡格式的研究主題',
+      question: '模型回傳格式不同時如何處理？',
+      domain: 'Software Engineering',
+      category: 'Empirical',
+      fiveCs: {
+        category: { summary: '實證研究', evidence: ['source-1'] },
+        context: '延續既有結構化輸出研究',
+        correctness: '仍需人工核對',
+        contributions: '提出相容層',
+        clarity: '敘述清楚',
+      },
+      mainContributions: ['相容精簡 JSON'],
+      decision: 'continue',
+      evidence: [{ id: 'source-1', page: 2, section: 'Methods', excerpt: 'A compact response.' }],
+    }
+    const parsed = validatePass1(compact, 4, 'paper-compact')
+    expect(parsed.schemaVersion).toBe('1.0')
+    expect(parsed.fiveCs).toHaveLength(5)
+    expect(parsed.fiveCs[0].evidenceIds).toEqual(['source-1'])
+    expect(parsed.evidence[0]).toMatchObject({
+      paperId: 'paper-compact', pdfPageIndex: 1, pdfPageDisplay: 2,
+      objectType: 'text', verificationStatus: 'unverified', printedPage: null, notes: null,
+    })
+  })
+
+  it('unwraps a nested result and uses explicit missing-information labels', () => {
+    const normalized = normalizePass1Response({ result: { summary: '只有摘要', evidence: [] } })
+    const parsed = pass1Schema.parse(normalized)
+    expect(parsed.oneSentenceTopic).toBe('只有摘要')
+    expect(parsed.researchQuestion).toBe('未找到研究問題')
+    expect(parsed.authors).toEqual([])
   })
 })

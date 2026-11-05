@@ -111,7 +111,10 @@ export default function App() {
   const updatePaper = (id: string, transform: (paper: Paper) => Paper) => updateBundle((current) => ({ ...current, papers: current.papers.map((paper) => paper.id === id ? transform(paper) : paper) }))
 
   const reportError = (value: unknown) => {
-    const text = value instanceof Error ? value.message : String(value)
+    const raw = value instanceof Error ? value.message : String(value)
+    const text = raw.length > 900 || /"code"\s*:\s*"invalid_/.test(raw)
+      ? 'AI 回傳格式與預期不一致，系統未覆蓋原有分析。請重試，或改用較擅長結構化輸出的模型。'
+      : raw
     setError(text)
     setMessage(text)
   }

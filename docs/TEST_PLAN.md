@@ -5,7 +5,7 @@
 | 檢查 | 指令 | 目前狀態 |
 | --- | --- | --- |
 | TypeScript strict | `npm.cmd run typecheck` | 通過 |
-| Unit tests | `npm.cmd test` | 10/10 通過 |
+| Unit tests | `npm.cmd test` | 12/12 通過 |
 | Production build | `npm.cmd run build` | 通過 |
 | Dependency audit | `npm.cmd audit --omit=dev` | 0 vulnerabilities |
 
