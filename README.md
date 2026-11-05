@@ -39,7 +39,7 @@ npm.cmd run build
 | Google AI Studio | `https://generativelanguage.googleapis.com/v1beta` | PDF 以 `inlineData` 直接送往 Gemini | `models/:model:generateContent` + JSON Schema |
 | CGU LLM Gateway | `https://air.cgu.edu.tw/cgullmapi/v1` | PDF.js 先在本機擷取逐頁文字；只傳文字 | Luna 類使用 `/responses`，其他文字模型使用 `/chat/completions` |
 
-Google API Key 以 `x-goog-api-key` header 傳送；CGU 使用 `Authorization: Bearer`。Key 只存在目前分頁的 React state，不寫入 localStorage、IndexedDB、URL、repo、匯出或日誌。重新整理後必須重新輸入。
+Google API Key 以 `x-goog-api-key` header 傳送；CGU 使用 `Authorization: Bearer`。Key 會依 Provider 儲存在目前瀏覽器的 localStorage，重新整理後會自動帶回，直到使用者在設定面板按「清除」。Key 不會寫入 IndexedDB、URL、repo、專案資料、匯出或日誌；共用電腦請用完後清除。
 
 純前端 BYOK 模式無法把 Key 當成伺服器秘密保護，適合研究原型與充分知情的使用者。機密或未公開 PDF 應先確認所選 AI 服務的使用條款與機構政策。
 

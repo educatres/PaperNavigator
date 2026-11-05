@@ -5,11 +5,11 @@
 | 檢查 | 指令 | 目前狀態 |
 | --- | --- | --- |
 | TypeScript strict | `npm.cmd run typecheck` | 通過 |
-| Unit tests | `npm.cmd test` | 12/12 通過 |
+| Unit tests | `npm.cmd test` | 15/15 通過 |
 | Production build | `npm.cmd run build` | 通過 |
 | Dependency audit | `npm.cmd audit --omit=dev` | 0 vulnerabilities |
 
-單元測試涵蓋：90%→92% 的 percentage points／relative %、零基準、資料集不同比較阻擋、硬體差異降級、Pass 1 五個 C、Evidence 頁碼範圍、摘錄正規化核對與 CSV 公式注入。
+單元測試涵蓋：90%→92% 的 percentage points／relative %、零基準、資料集不同比較阻擋、硬體差異降級、Pass 1 五個 C、Evidence 頁碼範圍、摘錄正規化核對、CSV 公式注入，以及 Provider Key 的保存、分離、清除與損毀值防護。
 
 ## 人工驗收文件組
 
@@ -21,8 +21,8 @@
 ## 人工驗收步驟
 
 1. 匯入 A，確認 magic bytes、頁數、預覽與文字品質提示。
-2. 輸入測試 Key、取得模型清單；重整頁面確認 Key 消失。
-3. 執行 Pass 1；檢查五個 C 都有 evidence 或「未找到」，點 evidence 跳 PDF。
+2. 輸入測試 Key、取得模型清單；重整頁面確認 Key 仍會帶回，切換 Provider 確認各自獨立，再按「清除」確認永久移除。
+3. 執行 Pass 1；確認全畫面半透明遮罩顯示目前步驟、等待時間與取消按鈕，再檢查五個 C 都有 evidence 或「未找到」，點 evidence 跳 PDF。
 4. 執行 Pass 2；確認 prior work 與 paper proposed 分開，缺值不是 0。
 5. 指定一個表格；確認只稱本文所報告的比較結果，消融最大下降不被稱為因果證明。
 6. 執行 Pass 3；確認 missing／implicit 可見，研究題目標示為 AI 建議。

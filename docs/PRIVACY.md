@@ -2,10 +2,11 @@
 
 ## API Key
 
-- Key 只存在目前瀏覽器分頁的記憶體。
-- 不寫入 localStorage、IndexedDB、URL、GitHub Actions、analytics、console 或任何匯出。
+- Key 依 Provider 儲存在目前瀏覽器的 localStorage，重新整理後會自動帶回，直到使用者按「清除」。
+- 不寫入 IndexedDB、URL、GitHub Actions、analytics、console、專案資料、repository 或任何匯出。
 - Google 使用 `x-goog-api-key` header；CGU 使用 Bearer header。
 - Project Proxy Token 同樣只存記憶體。
+- localStorage 不會加密，也可能被同來源 JavaScript 讀取；共用或公共電腦使用後必須清除。
 - 純前端 JavaScript 無法像後端秘密一樣保護使用者 Key；正式機構部署應使用後端代理與短效憑證。
 
 ## PDF

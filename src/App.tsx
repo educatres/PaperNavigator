@@ -10,6 +10,7 @@ import { roiPrompt } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
 import { clearBundle, loadBundle, pullFromProjectProxy, pushToProjectProxy, saveBundle } from './storage/projectStore'
 import { exportBibTeX, exportComparisonCsv, exportPaperMarkdown, exportProjectJson, exportRis, importProjectJson } from './storage/exports'
+import { clearApiKey, readApiKey, saveApiKey } from './storage/apiKeyStore'
 import { coCitationRows, verifyCitation } from './research/citations'
 
 type TabId = 'overview' | 'pass1' | 'pass2' | 'tables' | 'pass3' | 'compare' | 'research' | 'notes'
@@ -44,6 +45,40 @@ function usageText(usage: AnalysisUsage | null) {
   return 'API 未回傳 token 用量；費用依目前帳號、模型與實際使用量而定。'
 }
 
+function formatElapsed(seconds: number) {
+  if (seconds < 60) return `${seconds} 秒`
+  return `${Math.floor(seconds / 60)} 分 ${String(seconds % 60).padStart(2, '0')} 秒`
+}
+
+function busyDetail(message: string, elapsed: number) {
+  if (/Crossref/.test(message)) return '正在向 Crossref 查詢書目資料，請保持此頁面開啟。'
+  if (/PDF|擷取第|核對/.test(message)) return '正在本機處理文件，完成後會自動回到閱讀畫面。'
+  if (elapsed < 12) return '正在整理文件內容並等待模型回應，請保持此頁面開啟。'
+  if (elapsed < 35) return '模型仍在閱讀與產生結構化結果，較長的論文可能需要一些時間。'
+  return '仍在處理中；完成後會自動驗證結果。若不想繼續等待，可以取消這次請求。'
+}
+
+function BusyOverlay({ message, onCancel }: { message: string; onCancel?: () => void }) {
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    setElapsed(0)
+    const timer = window.setInterval(() => setElapsed((current) => current + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [message])
+
+  return <div className="busy-overlay" role="status" aria-live="polite" aria-busy="true">
+    <div className="busy-overlay-card">
+      <div className="busy-orbit" aria-hidden="true"><span /></div>
+      <span className="eyebrow">PROCESSING</span>
+      <h2>{message}</h2>
+      <p>{busyDetail(message, elapsed)}</p>
+      <small>已等待 {formatElapsed(elapsed)}</small>
+      {onCancel && <button className="secondary-button" onClick={onCancel}>取消這次請求</button>}
+    </div>
+  </div>
+}
+
 export default function App() {
   const [bundle, setBundle] = useState<ProjectBundle>(emptyBundle)
   const [hydrated, setHydrated] = useState(false)
@@ -53,7 +88,7 @@ export default function App() {
   const [pageIndex, setPageIndex] = useState(0)
   const [settingsOpen, setSettingsOpen] = useState(true)
   const [showKey, setShowKey] = useState(false)
-  const [config, setConfig] = useState<ProviderConfig>({ id: 'google', apiKey: '', baseUrl: GOOGLE_BASE_URL, modelId: '' })
+  const [config, setConfig] = useState<ProviderConfig>(() => ({ id: 'google', apiKey: readApiKey('google'), baseUrl: GOOGLE_BASE_URL, modelId: '' }))
   const [models, setModels] = useState<Array<{ id: string; displayName: string }>>([])
   const [connectionState, setConnectionState] = useState<'idle' | 'testing' | 'ready' | 'error'>('idle')
   const [busy, setBusy] = useState('')
@@ -90,6 +125,10 @@ export default function App() {
     const timer = window.setTimeout(() => void saveBundle({ ...bundle, exportedAt: new Date().toISOString() }), 250)
     return () => window.clearTimeout(timer)
   }, [bundle, hydrated])
+
+  useEffect(() => {
+    saveApiKey(config.id, config.apiKey)
+  }, [config.id, config.apiKey])
 
   useEffect(() => {
     if (!selectedId && bundle.papers[0]) setSelectedId(bundle.papers[0].id)
@@ -171,6 +210,7 @@ export default function App() {
 
   const testConnection = async () => {
     setConnectionState('testing')
+    setBusy('正在測試模型連線…')
     setError('')
     try {
       const available = await listModels(config)
@@ -181,6 +221,7 @@ export default function App() {
       setConnectionState('ready')
       setMessage(`連線成功，共找到 ${available.length} 個可用文字模型。`)
     } catch (value) { setConnectionState('error'); reportError(value) }
+    finally { setBusy('') }
   }
 
   const startJob = async (label: string, task: (signal: AbortSignal) => Promise<void>) => {
@@ -246,7 +287,9 @@ export default function App() {
 
   const analyzeRegion = async (dataUrl: string, targetPage: number) => {
     if (!config.apiKey || !config.modelId) throw new Error('請先設定並測試 AI 連線。')
-    return analyzeImageRegion(config, dataUrl, roiPrompt(targetPage, ''), undefined)
+    setBusy('正在分析圈選區域…')
+    try { return await analyzeImageRegion(config, dataUrl, roiPrompt(targetPage, ''), undefined) }
+    finally { setBusy('') }
   }
 
   const jumpToEvidence = (evidenceId: string) => {
@@ -325,15 +368,15 @@ export default function App() {
       <div className="settings-grid">
         <label>服務來源<select value={config.id} onChange={(event) => {
           const id = event.target.value as ProviderId
-          setConfig({ id, apiKey: '', baseUrl: id === 'google' ? GOOGLE_BASE_URL : CGU_BASE_URL, modelId: '' })
+          setConfig({ id, apiKey: readApiKey(id), baseUrl: id === 'google' ? GOOGLE_BASE_URL : CGU_BASE_URL, modelId: '' })
           setModels([]); setConnectionState('idle')
         }}><option value="google">Google AI Studio（PDF 原生）</option><option value="cgu">CGU LLM Gateway（本機抽文字）</option></select></label>
         <label>Base URL<input value={config.baseUrl} onChange={(event) => setConfig((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
-        <label>API Key<div className="key-row"><input type={showKey ? 'text' : 'password'} autoComplete="off" value={config.apiKey} onChange={(event) => { setConfig((current) => ({ ...current, apiKey: event.target.value })); setConnectionState('idle') }} placeholder="只存在目前分頁記憶體" /><button className="small-button" onClick={() => setShowKey((value) => !value)}>{showKey ? '隱藏' : '顯示'}</button></div></label>
+        <label>API Key<div className="key-row"><input type={showKey ? 'text' : 'password'} autoComplete="off" value={config.apiKey} onChange={(event) => { setConfig((current) => ({ ...current, apiKey: event.target.value })); setConnectionState('idle') }} placeholder="儲存在此瀏覽器 localStorage" /><button className="small-button" onClick={() => setShowKey((value) => !value)}>{showKey ? '隱藏' : '顯示'}</button><button className="small-button" disabled={!config.apiKey} onClick={() => { clearApiKey(config.id); setConfig((current) => ({ ...current, apiKey: '' })); setConnectionState('idle'); setMessage('已清除此服務來源儲存在瀏覽器的 API Key。') }}>清除</button></div></label>
         <label>模型<select value={config.modelId} disabled={!models.length} onChange={(event) => setConfig((current) => ({ ...current, modelId: event.target.value }))}><option value="">請先測試連線</option>{models.map((model) => <option key={model.id} value={model.id}>{model.displayName || model.id}</option>)}</select></label>
       </div>
       <div className="settings-footer">
-        <p><strong>隱私：</strong>{config.id === 'google' ? '啟動分析時 PDF 將直接送至 Google Gemini。' : 'PDF 不送至本站；CGU 模式只傳送 PDF.js 在本機擷取的逐頁文字，圈選分析時才傳該區域影像。'} Key 不寫入 localStorage、IndexedDB、匯出或日誌，重新整理即消失。</p>
+        <p><strong>隱私：</strong>{config.id === 'google' ? '啟動分析時 PDF 將直接送至 Google Gemini。' : 'PDF 不送至本站；CGU 模式只傳送 PDF.js 在本機擷取的逐頁文字，圈選分析時才傳該區域影像。'} API Key 會依服務來源儲存在此瀏覽器的 localStorage，直到你按「清除」；不會寫入專案、匯出、IndexedDB 或 repository。共用電腦請用完後清除。</p>
         <button className="secondary-button" disabled={!config.apiKey || connectionState === 'testing'} onClick={() => void testConnection()}>{connectionState === 'testing' ? '測試中…' : connectionState === 'ready' ? '✓ 重新測試' : '測試連線'}</button>
       </div>
       <details className="proxy-settings"><summary>進階：後端代理與跨裝置同步（Phase 4）</summary><div className="settings-grid proxy-grid">
@@ -349,6 +392,7 @@ export default function App() {
       {busy && <button className="text-button" onClick={() => abortRef.current?.abort()}>取消請求</button>}
     </div>
     {error && <div className="error-banner"><strong>需要處理</strong><span>{error}</span><button onClick={() => setError('')}>×</button></div>}
+    {busy && <BusyOverlay message={busy} onCancel={abortRef.current ? () => abortRef.current?.abort() : undefined} />}
 
     <main className="workspace-layout">
       <aside className="library-panel">

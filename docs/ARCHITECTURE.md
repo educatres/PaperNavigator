@@ -39,4 +39,4 @@ Google 模式保留 PDF 的視覺、版面與圖表資訊，使用原生 `genera
 
 ## 快取與檔案生命週期
 
-`ProjectBundle` 保存分析，不保存 `File`、PDF bytes 或 API Key。重新載入後，使用者需重新選取同一 PDF；SHA-256 相符才重新綁定。這能避免 IndexedDB 長期留存原始論文，也讓 Key 不進入任何序列化路徑。
+`ProjectBundle` 保存分析，不保存 `File`、PDF bytes 或 API Key。API Key 依 Provider 獨立保存在瀏覽器 localStorage，與 ProjectBundle、IndexedDB、匯出及 repository 隔離，使用者可在設定面板個別清除。重新載入後，使用者仍需重新選取同一 PDF；SHA-256 相符才重新綁定，避免 IndexedDB 長期留存原始論文。

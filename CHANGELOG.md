@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2 — 2026-11-06
+
+- API Key 改為依 Provider 儲存在瀏覽器 localStorage，重新整理後自動帶回，並提供個別清除控制。
+- ProjectBundle、IndexedDB、匯出、repository 與日誌仍不保存 API Key。
+- 所有進行中工作改為全畫面半透明遮罩，中央即時顯示步驟、說明、等待時間與可用的取消動作。
+- 新增 Key 保存、Provider 隔離、清除及損毀 localStorage 防護測試。
+
 ## 0.1.1 — 2026-11-06
 
 - 修正第一遍在模型回傳精簡或巢狀 JSON 時，直接顯示完整 schema 驗證錯誤的問題。
@@ -13,7 +20,7 @@
 
 - 建立 React、TypeScript strict、Vite、PDF.js、Zod 與 GitHub Pages workflow。
 - 完成 Google AI Studio 與 CGU LLM Gateway adapter、動態模型清單、取消、逾時、429／5xx 重試與 usage 顯示。
-- Key 僅存記憶體；完成 PDF → structured JSON → schema validation 的端到端流程。
+- Key 初版僅存記憶體；完成 PDF → structured JSON → schema validation 的端到端流程。
 
 ### Phase 1
 
