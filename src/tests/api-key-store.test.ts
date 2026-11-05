@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { API_KEY_STORAGE_KEY, clearApiKey, readApiKey, saveApiKey } from '../storage/apiKeyStore'
+import { AI_SETTINGS_STORAGE_KEY, API_KEY_STORAGE_KEY, PROXY_SETTINGS_STORAGE_KEY, clearAllSettings, clearApiKey, clearProviderConfig, readActiveProvider, readApiKey, readProviderConfig, readProxySettings, saveApiKey, saveProviderConfig, saveProxySettings } from '../storage/apiKeyStore'
 
 class MemoryStorage {
   private values = new Map<string, string>()
@@ -37,5 +37,38 @@ describe('API Key localStorage', () => {
     storage.setItem(API_KEY_STORAGE_KEY, JSON.stringify({ google: 123, cgu: 'valid' }))
     expect(readApiKey('google', storage)).toBe('')
     expect(readApiKey('cgu', storage)).toBe('valid')
+  })
+
+  it('保存並恢復 Provider、Base URL、模型與 API Key', () => {
+    const storage = new MemoryStorage()
+    saveProviderConfig({ id: 'cgu', apiKey: 'secret', baseUrl: 'https://example.test/v1', modelId: 'gemma-4-26b-a4b-it' }, storage)
+
+    expect(readActiveProvider(storage)).toBe('cgu')
+    expect(readProviderConfig('cgu', { id: 'cgu', apiKey: '', baseUrl: 'fallback', modelId: '' }, storage)).toEqual({
+      id: 'cgu', apiKey: 'secret', baseUrl: 'https://example.test/v1', modelId: 'gemma-4-26b-a4b-it',
+    })
+  })
+
+  it('清除指定 Provider 的完整設定', () => {
+    const storage = new MemoryStorage()
+    saveProviderConfig({ id: 'cgu', apiKey: 'secret', baseUrl: 'https://example.test/v1', modelId: 'gpt-oss-120b' }, storage)
+    clearProviderConfig('cgu', storage)
+
+    expect(readProviderConfig('cgu', { id: 'cgu', apiKey: '', baseUrl: 'fallback', modelId: 'default' }, storage)).toEqual({
+      id: 'cgu', apiKey: '', baseUrl: 'fallback', modelId: 'default',
+    })
+    expect(storage.getItem(AI_SETTINGS_STORAGE_KEY)).toContain('providers')
+  })
+
+  it('紅色清除會移除 Provider、Key 與代理設定', () => {
+    const storage = new MemoryStorage()
+    saveProviderConfig({ id: 'cgu', apiKey: 'secret', baseUrl: 'https://example.test/v1', modelId: 'gpt-oss-120b' }, storage)
+    saveProxySettings('https://proxy.test', 'short-token', storage)
+    expect(readProxySettings(storage)).toEqual({ url: 'https://proxy.test', token: 'short-token' })
+
+    clearAllSettings(storage)
+    expect(storage.getItem(API_KEY_STORAGE_KEY)).toBeNull()
+    expect(storage.getItem(AI_SETTINGS_STORAGE_KEY)).toBeNull()
+    expect(storage.getItem(PROXY_SETTINGS_STORAGE_KEY)).toBeNull()
   })
 })

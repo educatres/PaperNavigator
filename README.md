@@ -11,6 +11,7 @@ PaperNavigator 是以「來源可追溯」為核心的 AI 論文快速閱讀導�
 - 2–10 篇比較、可比性標籤、percentage points 與 relative % 分開計算。
 - 個人筆記、IndexedDB 保存、Markdown／CSV／JSON／BibTeX／RIS 匯出與 JSON 回復。
 - references 待驗證清單、Crossref DOI 核對、共引線索與 PDF 區域圈選分析。
+- PDF 原檔本機保存、重新整理自動恢復，以及不產生便條的多色螢光標記。
 - 可插拔 Project Proxy 及可直接執行的最小同步服務。
 
 ## 本機執行
@@ -32,12 +33,12 @@ npm.cmd run build
 
 ## API 連線
 
-介面支援兩種 provider，模型清單都由 API 動態取得，不把特定模型名稱寫死：
+介面支援兩種 provider，模型清單由 API 動態取得後，只顯示實際讀到的 `gemma-4-26b-a4b-it` 與 `gpt-oss-120b`；預設為 `gemma-4-26b-a4b-it`：
 
 | Provider | Base URL | PDF 資料流 | 生成 API |
 | --- | --- | --- | --- |
 | Google AI Studio | `https://generativelanguage.googleapis.com/v1beta` | PDF 以 `inlineData` 直接送往 Gemini | `models/:model:generateContent` + JSON Schema |
-| CGU LLM Gateway | `https://air.cgu.edu.tw/cgullmapi/v1` | PDF.js 先在本機擷取逐頁文字；只傳文字 | Luna 類使用 `/responses`，其他文字模型使用 `/chat/completions` |
+| CGU LLM Gateway | `https://air.cgu.edu.tw/cgullmapi/v1` | PDF.js 先在本機擷取逐頁文字；只傳文字 | 指定模型使用 `/responses` |
 
 Google API Key 以 `x-goog-api-key` header 傳送；CGU 使用 `Authorization: Bearer`。Key 會依 Provider 儲存在目前瀏覽器的 localStorage，重新整理後會自動帶回，直到使用者在設定面板按「清除」。Key 不會寫入 IndexedDB、URL、repo、專案資料、匯出或日誌；共用電腦請用完後清除。
 
@@ -51,6 +52,6 @@ Vite `base` 使用相對路徑，可部署在 repository 子路徑。Repository 
 
 ## 本機資料與備份
 
-分析、筆記與書目存於 IndexedDB；PDF 原檔不會永久保存。重新載入後需重新選取同一 PDF，系統以 SHA-256 確認後恢復原文導覽。完整專案 JSON 含 `schemaVersion`，但不含 PDF、Key 或代理 Token。
+分析、筆記、螢光標記、書目與 PDF 原檔存於 IndexedDB，重新整理後會自動恢復。完整專案 JSON 含 `schemaVersion` 與螢光標記，但為控制檔案大小仍不含 PDF 原檔、Key 或代理 Token。API 單次等待上限為 600 秒。
 
 進一步設計、測試與隱私說明位於 [docs](./docs)。

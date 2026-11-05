@@ -1,9 +1,15 @@
-import type { ProviderId } from '../domain/types'
+import type { ProviderConfig, ProviderId } from '../domain/types'
 
 export const API_KEY_STORAGE_KEY = 'papernavigator.api-keys.v1'
+export const AI_SETTINGS_STORAGE_KEY = 'papernavigator.ai-settings.v1'
+export const PROXY_SETTINGS_STORAGE_KEY = 'papernavigator.proxy-settings.v1'
 
 type ApiKeyMap = Partial<Record<ProviderId, string>>
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
+type StoredSettings = {
+  activeProvider?: ProviderId
+  providers?: Partial<Record<ProviderId, Omit<ProviderConfig, 'id'>>>
+}
 
 function readMap(storage: StorageLike): ApiKeyMap {
   try {
@@ -46,4 +52,100 @@ export function saveApiKey(provider: ProviderId, apiKey: string, storage?: Stora
 
 export function clearApiKey(provider: ProviderId, storage?: StorageLike) {
   saveApiKey(provider, '', storage)
+}
+
+function readSettings(storage: StorageLike): StoredSettings {
+  try {
+    const raw = storage.getItem(AI_SETTINGS_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    return parsed as StoredSettings
+  } catch {
+    return {}
+  }
+}
+
+function writeSettings(value: StoredSettings, storage: StorageLike) {
+  storage.setItem(AI_SETTINGS_STORAGE_KEY, JSON.stringify(value))
+}
+
+export function readActiveProvider(storage?: StorageLike): ProviderId {
+  try {
+    const provider = readSettings(storage ?? window.localStorage).activeProvider
+    return provider === 'google' || provider === 'cgu' ? provider : 'cgu'
+  } catch {
+    return 'cgu'
+  }
+}
+
+export function readProviderConfig(provider: ProviderId, defaults: ProviderConfig, storage?: StorageLike): ProviderConfig {
+  try {
+    const target = storage ?? window.localStorage
+    const saved = readSettings(target).providers?.[provider]
+    return {
+      id: provider,
+      apiKey: typeof saved?.apiKey === 'string' ? saved.apiKey : readApiKey(provider, target),
+      baseUrl: typeof saved?.baseUrl === 'string' && saved.baseUrl ? saved.baseUrl : defaults.baseUrl,
+      modelId: typeof saved?.modelId === 'string' ? saved.modelId : defaults.modelId,
+    }
+  } catch {
+    return defaults
+  }
+}
+
+export function saveProviderConfig(config: ProviderConfig, storage?: StorageLike) {
+  try {
+    const target = storage ?? window.localStorage
+    const current = readSettings(target)
+    writeSettings({
+      ...current,
+      activeProvider: config.id,
+      providers: { ...current.providers, [config.id]: { apiKey: config.apiKey, baseUrl: config.baseUrl, modelId: config.modelId } },
+    }, target)
+    saveApiKey(config.id, config.apiKey, target)
+  } catch {
+    // The current React state remains usable when browser storage is unavailable.
+  }
+}
+
+export function clearProviderConfig(provider: ProviderId, storage?: StorageLike) {
+  try {
+    const target = storage ?? window.localStorage
+    const current = readSettings(target)
+    const providers = { ...current.providers }
+    delete providers[provider]
+    writeSettings({ ...current, providers }, target)
+    clearApiKey(provider, target)
+  } catch {
+    // Ignore storage restrictions; the caller also resets its in-memory state.
+  }
+}
+
+export function readProxySettings(storage?: StorageLike) {
+  try {
+    const raw = (storage ?? window.localStorage).getItem(PROXY_SETTINGS_STORAGE_KEY)
+    const parsed = raw ? JSON.parse(raw) as unknown : null
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { url: '', token: '' }
+    const value = parsed as Record<string, unknown>
+    return { url: typeof value.url === 'string' ? value.url : '', token: typeof value.token === 'string' ? value.token : '' }
+  } catch {
+    return { url: '', token: '' }
+  }
+}
+
+export function saveProxySettings(url: string, token: string, storage?: StorageLike) {
+  try { (storage ?? window.localStorage).setItem(PROXY_SETTINGS_STORAGE_KEY, JSON.stringify({ url, token })) }
+  catch { /* The in-memory fields remain usable. */ }
+}
+
+export function clearAllSettings(storage?: StorageLike) {
+  try {
+    const target = storage ?? window.localStorage
+    target.removeItem(API_KEY_STORAGE_KEY)
+    target.removeItem(AI_SETTINGS_STORAGE_KEY)
+    target.removeItem(PROXY_SETTINGS_STORAGE_KEY)
+  } catch {
+    // The caller also clears its in-memory state.
+  }
 }

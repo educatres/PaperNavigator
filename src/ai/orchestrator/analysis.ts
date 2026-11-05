@@ -1,6 +1,6 @@
 import type { ZodType } from 'zod'
 import type { AnalysisResponse, Pass1Result, Pass2Result, PdfDocumentData, ProviderConfig, TableAnalysis } from '../../domain/types'
-import { PASS1_JSON_SCHEMA, PASS2_JSON_SCHEMA, PASS3_JSON_SCHEMA, TABLE_JSON_SCHEMA, parseJsonResponse, pass2Schema, pass3Schema, schemaValidationMessage, tableAnalysisSchema, validatePass1 } from '../../domain/schemas'
+import { normalizePass2Response, PASS1_JSON_SCHEMA, PASS2_JSON_SCHEMA, PASS3_JSON_SCHEMA, TABLE_JSON_SCHEMA, parseJsonResponse, pass2Schema, pass3Schema, schemaValidationMessage, tableAnalysisSchema, validatePass1 } from '../../domain/schemas'
 import { verifyEvidence } from '../../pdf/pdfClient'
 import { generateStructured } from '../providers/provider'
 import { pass1Prompt, pass2Prompt, pass3Prompt, tablePrompt } from '../prompts/prompts'
@@ -28,7 +28,14 @@ export async function analyzePass1(config: ProviderConfig, document: PdfDocument
 }
 
 export async function analyzePass2(config: ProviderConfig, document: PdfDocumentData, paperId: string, pass1: Pass1Result, signal?: AbortSignal) {
-  const response = await run(config, document, pass2Prompt(pass1), PASS2_JSON_SCHEMA, pass2Schema, '第二遍閱讀', signal)
+  const raw = await generateStructured(config, document, pass2Prompt(pass1), PASS2_JSON_SCHEMA, signal)
+  let parsed: Pass2Result
+  try {
+    parsed = pass2Schema.parse(normalizePass2Response(parseJsonResponse(raw.text)))
+  } catch (error) {
+    throw new Error(schemaValidationMessage(error, '第二遍閱讀') ?? (error instanceof Error ? error.message : String(error)))
+  }
+  const response = { result: parsed, usage: raw.usage, rawText: raw.text }
   const validIndex = (value: number | null) => value !== null && value >= 0 && value < document.pageCount
   const result: Pass2Result = {
     ...response.result,

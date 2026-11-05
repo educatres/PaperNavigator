@@ -4,7 +4,7 @@
 
 ```text
 React UI
-  ├─ PDF Viewer / ROI
+  ├─ PDF Viewer / ROI / persistent highlights
   ├─ Reading passes / Table analysis / Compare
   └─ Notes / Citation / Export / Sync
           ↓
@@ -18,7 +18,7 @@ Google generateContent       CGU Responses / Chat Completions
           ↓                              ↓
 PDF inlineData                  PDF.js extracted page text
 
-IndexedDB ← ProjectBundle → JSON / Markdown / CSV / BibTeX / RIS
+IndexedDB ← ProjectBundle + PDF Blob → JSON / Markdown / CSV / BibTeX / RIS
                             → optional Project Proxy
 ```
 
@@ -39,4 +39,4 @@ Google 模式保留 PDF 的視覺、版面與圖表資訊，使用原生 `genera
 
 ## 快取與檔案生命週期
 
-`ProjectBundle` 保存分析，不保存 `File`、PDF bytes 或 API Key。API Key 依 Provider 獨立保存在瀏覽器 localStorage，與 ProjectBundle、IndexedDB、匯出及 repository 隔離，使用者可在設定面板個別清除。重新載入後，使用者仍需重新選取同一 PDF；SHA-256 相符才重新綁定，避免 IndexedDB 長期留存原始論文。
+`ProjectBundle` 保存分析與正規化頁面座標的螢光標記，不內嵌 `File`、PDF bytes 或 API Key。PDF 原檔另存於 IndexedDB `pdfs` object store，重新載入時以 paper ID 自動恢復；若網站資料被清除，仍可用 SHA-256 相符的原檔重新綁定。API Key 與 Provider、Base URL、模型則保存在 localStorage，與 ProjectBundle、匯出及 repository 隔離。

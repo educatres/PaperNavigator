@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, Dispatch, SetStateAction } from 'react'
 import { PdfViewer } from './components/pdf/PdfViewer'
-import type { AnalysisUsage, Paper, PdfDocumentData, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
+import type { AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
 import { comparisonRows, compareRows } from './domain/comparison'
 import type { ComparisonRow } from './domain/comparison'
 import { analyzePass1, analyzePass2, analyzePass3, analyzeTable } from './ai/orchestrator/analysis'
-import { analyzeImageRegion, CGU_BASE_URL, GOOGLE_BASE_URL, listModels } from './ai/providers/provider'
+import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
 import { roiPrompt } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
-import { clearBundle, loadBundle, pullFromProjectProxy, pushToProjectProxy, saveBundle } from './storage/projectStore'
+import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, pullFromProjectProxy, pushToProjectProxy, saveBundle, savePdfDocument } from './storage/projectStore'
 import { exportBibTeX, exportComparisonCsv, exportPaperMarkdown, exportProjectJson, exportRis, importProjectJson } from './storage/exports'
-import { clearApiKey, readApiKey, saveApiKey } from './storage/apiKeyStore'
+import { clearAllSettings, readActiveProvider, readProviderConfig, readProxySettings, saveProviderConfig, saveProxySettings } from './storage/apiKeyStore'
 import { coCitationRows, verifyCitation } from './research/citations'
 
 type TabId = 'overview' | 'pass1' | 'pass2' | 'tables' | 'pass3' | 'compare' | 'research' | 'notes'
@@ -38,6 +38,14 @@ function emptyBundle(): ProjectBundle {
 const formatBytes = (bytes: number) => bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
 const decisionLabel = { continue: '繼續深入', later: '稍後閱讀', stop: '暫停閱讀' }
 const verificationLabel: Record<VerificationStatus, string> = { matched: '已定位', unverified: '待核對', mismatch: '位置異常' }
+
+function defaultProviderConfig(id: ProviderId): ProviderConfig {
+  return { id, apiKey: '', baseUrl: id === 'google' ? GOOGLE_BASE_URL : CGU_BASE_URL, modelId: id === 'cgu' ? DEFAULT_MODEL_ID : '' }
+}
+
+function modelOptions(modelId: string) {
+  return SUPPORTED_MODEL_IDS.includes(modelId as typeof SUPPORTED_MODEL_IDS[number]) ? [{ id: modelId, displayName: modelId }] : []
+}
 
 function usageText(usage: AnalysisUsage | null) {
   if (!usage) return ''
@@ -86,10 +94,20 @@ export default function App() {
   const [selectedId, setSelectedId] = useState('')
   const [tab, setTab] = useState<TabId>('overview')
   const [pageIndex, setPageIndex] = useState(0)
-  const [settingsOpen, setSettingsOpen] = useState(true)
+  const [headerVisible, setHeaderVisible] = useState(() => {
+    try { return window.localStorage.getItem('papernavigator.header-hidden') !== 'yes' }
+    catch { return true }
+  })
+  const [settingsOpen, setSettingsOpen] = useState(() => {
+    try { return window.localStorage.getItem('papernavigator.settings-open') !== 'no' }
+    catch { return true }
+  })
   const [showKey, setShowKey] = useState(false)
-  const [config, setConfig] = useState<ProviderConfig>(() => ({ id: 'google', apiKey: readApiKey('google'), baseUrl: GOOGLE_BASE_URL, modelId: '' }))
-  const [models, setModels] = useState<Array<{ id: string; displayName: string }>>([])
+  const [config, setConfig] = useState<ProviderConfig>(() => {
+    const id = readActiveProvider()
+    return readProviderConfig(id, defaultProviderConfig(id))
+  })
+  const [models, setModels] = useState<Array<{ id: string; displayName: string }>>(() => modelOptions(config.modelId))
   const [connectionState, setConnectionState] = useState<'idle' | 'testing' | 'ready' | 'error'>('idle')
   const [busy, setBusy] = useState('')
   const [message, setMessage] = useState('先匯入一篇 PDF，再測試模型連線。')
@@ -102,22 +120,29 @@ export default function App() {
   const [noteVerification, setNoteVerification] = useState<'checked' | 'pending' | 'concern'>('pending')
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [compareQuery, setCompareQuery] = useState({ task: '', dataset: '', metric: '' })
-  const [proxyUrl, setProxyUrl] = useState('')
-  const [proxyToken, setProxyToken] = useState('')
+  const [proxyUrl, setProxyUrl] = useState(() => readProxySettings().url)
+  const [proxyToken, setProxyToken] = useState(() => readProxySettings().token)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const importRef = useRef<HTMLInputElement | null>(null)
   const reattachRef = useRef<HTMLInputElement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
-    loadBundle().then((saved) => {
-      if (saved) {
+    void (async () => {
+      try {
+        const saved = await loadBundle()
+        if (!saved) return
+        const restored = await loadPdfDocuments(saved.papers.map((paper) => paper.id))
         setBundle(saved)
+        setDocuments(restored)
         setSelectedId(saved.papers[0]?.id ?? '')
         setCompareIds(saved.papers.map((paper) => paper.id))
-        setMessage(saved.papers.length ? '已載入本機分析。請重新附上 PDF 以恢復原文檢視與 AI 分析。' : '先匯入一篇 PDF，再測試模型連線。')
-      }
-    }).catch(() => setMessage('無法讀取本機儲存；目前仍可在此分頁使用。')).finally(() => setHydrated(true))
+        const restoredCount = Object.keys(restored).length
+        setMessage(saved.papers.length ? `已載入本機專案與 ${restoredCount} 份 PDF 原檔。` : '先匯入一篇 PDF，再測試模型連線。')
+      } catch {
+        setMessage('無法讀取本機儲存；目前仍可在此分頁使用。')
+      } finally { setHydrated(true) }
+    })()
   }, [])
 
   useEffect(() => {
@@ -127,8 +152,22 @@ export default function App() {
   }, [bundle, hydrated])
 
   useEffect(() => {
-    saveApiKey(config.id, config.apiKey)
-  }, [config.id, config.apiKey])
+    saveProviderConfig(config)
+  }, [config])
+
+  useEffect(() => {
+    try { window.localStorage.setItem('papernavigator.header-hidden', headerVisible ? 'no' : 'yes') }
+    catch { /* The header still works when browser storage is unavailable. */ }
+  }, [headerVisible])
+
+  useEffect(() => {
+    try { window.localStorage.setItem('papernavigator.settings-open', settingsOpen ? 'yes' : 'no') }
+    catch { /* The panel still works when browser storage is unavailable. */ }
+  }, [settingsOpen])
+
+  useEffect(() => {
+    saveProxySettings(proxyUrl, proxyToken)
+  }, [proxyUrl, proxyToken])
 
   useEffect(() => {
     if (!selectedId && bundle.papers[0]) setSelectedId(bundle.papers[0].id)
@@ -151,7 +190,9 @@ export default function App() {
 
   const reportError = (value: unknown) => {
     const raw = value instanceof Error ? value.message : String(value)
-    const text = raw.length > 900 || /"code"\s*:\s*"invalid_/.test(raw)
+    const text = /quota|QuotaExceeded/i.test(raw)
+      ? '瀏覽器儲存空間不足，PDF 原檔未能保存。請釋放此網站的儲存空間後重試。'
+      : raw.length > 900 || /"code"\s*:\s*"invalid_/.test(raw)
       ? 'AI 回傳格式與預期不一致，系統未覆蓋原有分析。請重試，或改用較擅長結構化輸出的模型。'
       : raw
     setError(text)
@@ -171,17 +212,21 @@ export default function App() {
         const data = await readPdf(file, (page, total) => setBusy(`${file.name}：擷取第 ${page} / ${total} 頁`))
         const duplicate = [...bundle.papers, ...nextPapers].find((paper) => paper.sha256 === data.sha256)
         if (duplicate) {
-          setMessage(`${file.name} 與「${duplicate.filename}」內容相同，已略過重複檔案。`)
+          await savePdfDocument(duplicate.id, data)
+          setDocuments((current) => ({ ...current, [duplicate.id]: data }))
+          setSelectedId(duplicate.id)
+          setMessage(`${file.name} 與「${duplicate.filename}」內容相同，已恢復並保存該 PDF 原檔。`)
           continue
         }
         const id = crypto.randomUUID()
         const now = new Date().toISOString()
+        await savePdfDocument(id, data)
         nextDocuments[id] = data
         nextPapers.push({
           id, projectId: bundle.project.id, sha256: data.sha256, filename: data.filename,
           title: data.title, authors: data.author ? data.author.split(/[,;]/).map((item) => item.trim()).filter(Boolean) : [],
           year: null, doi: null, pageCount: data.pageCount, size: data.size, uploadTime: now,
-          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [],
+          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], highlights: [],
         })
       }
       if (nextPapers.length) {
@@ -190,7 +235,7 @@ export default function App() {
         setSelectedId(nextPapers[0].id)
         setCompareIds((current) => [...new Set([...current, ...nextPapers.map((paper) => paper.id)])])
         setPageIndex(0)
-        setMessage(`已匯入 ${nextPapers.length} 篇 PDF；原檔只在此分頁記憶體供預覽。`)
+        setMessage(`已匯入 ${nextPapers.length} 篇 PDF；原檔已保存在此瀏覽器。`)
       }
     } catch (value) { reportError(value) }
     finally { setBusy(''); if (fileRef.current) fileRef.current.value = '' }
@@ -202,26 +247,62 @@ export default function App() {
     try {
       const data = await readPdf(file)
       if (data.sha256 !== selectedPaper.sha256) throw new Error('這不是原先匯入的 PDF（SHA-256 不相符）。')
+      await savePdfDocument(selectedPaper.id, data)
       setDocuments((current) => ({ ...current, [selectedPaper.id]: data }))
-      setMessage('PDF 已重新附上，原文導航已恢復。')
+      setMessage('PDF 已重新附上並保存，原文導航已恢復。')
     } catch (value) { reportError(value) }
     finally { setBusy(''); if (reattachRef.current) reattachRef.current.value = '' }
   }
 
-  const testConnection = async () => {
+  const loadModelList = async () => {
+    const controller = new AbortController()
+    abortRef.current = controller
     setConnectionState('testing')
-    setBusy('正在測試模型連線…')
+    setBusy('正在讀取模型清單…')
+    setError('')
+    setModels([])
+    try {
+      const available = await listModels(config, controller.signal)
+      setModels(available)
+      if (!available.length) throw new Error(`模型清單中沒有讀到 ${SUPPORTED_MODEL_IDS.join(' 或 ')}。`)
+      const preferred = available.find((model) => model.id.toLowerCase() === DEFAULT_MODEL_ID) ?? available[0]
+      setConfig((current) => ({ ...current, modelId: available.some((model) => model.id === current.modelId) ? current.modelId : preferred.id }))
+      setConnectionState('idle')
+      setMessage(`已讀取模型清單：${available.map((model) => model.id).join('、')}。`)
+    } catch (value) { setConnectionState('error'); reportError(value) }
+    finally { setBusy(''); if (abortRef.current === controller) abortRef.current = null }
+  }
+
+  const testConnection = async () => {
+    const controller = new AbortController()
+    abortRef.current = controller
+    setConnectionState('testing')
+    setBusy('正在送出連線測試…')
     setError('')
     try {
-      const available = await listModels(config)
-      if (!available.length) throw new Error('連線成功，但沒有可用的文字模型。')
-      setModels(available)
-      const preferred = available.find((model) => /flash/i.test(model.id)) ?? available.find((model) => /gemma|gpt-oss|luna/i.test(model.id)) ?? available[0]
-      setConfig((current) => ({ ...current, modelId: available.some((model) => model.id === current.modelId) ? current.modelId : preferred.id }))
+      const reply = await testProviderConnection(config, controller.signal)
+      saveProviderConfig(config)
       setConnectionState('ready')
-      setMessage(`連線成功，共找到 ${available.length} 個可用文字模型。`)
+      setMessage(`連線成功，模型回覆：${reply.slice(0, 160)}`)
     } catch (value) { setConnectionState('error'); reportError(value) }
-    finally { setBusy('') }
+    finally { setBusy(''); if (abortRef.current === controller) abortRef.current = null }
+  }
+
+  const saveSettings = () => {
+    saveProviderConfig(config)
+    setMessage(`已保存 ${config.id === 'cgu' ? 'CGU' : 'Google'} 的 API Key、Base URL 與模型設定。`)
+  }
+
+  const clearSettings = () => {
+    clearAllSettings()
+    const cleared = defaultProviderConfig('cgu')
+    setConfig(cleared)
+    setModels(modelOptions(cleared.modelId))
+    setProxyUrl('')
+    setProxyToken('')
+    setShowKey(false)
+    setConnectionState('idle')
+    setMessage('已清除所有 AI 連線設定，並恢復 CGU／Gemma 預設值。')
   }
 
   const startJob = async (label: string, task: (signal: AbortSignal) => Promise<void>) => {
@@ -303,6 +384,7 @@ export default function App() {
     if (!window.confirm(`刪除「${paper.title ?? paper.filename}」及其分析、筆記與比較資料？`)) return
     updateBundle((current) => ({ ...current, papers: current.papers.filter((item) => item.id !== paper.id), comparisons: current.comparisons.map((item) => ({ ...item, paperIds: item.paperIds.filter((id) => id !== paper.id) })).filter((item) => item.paperIds.length >= 2) }))
     setDocuments((current) => { const next = { ...current }; delete next[paper.id]; return next })
+    void deletePdfDocument(paper.id).catch(reportError)
     setSelectedId(bundle.papers.find((item) => item.id !== paper.id)?.id ?? '')
   }
 
@@ -318,11 +400,12 @@ export default function App() {
     if (!file) return
     try {
       const imported = importProjectJson(await file.text())
+      await clearPdfDocuments()
       setBundle(imported)
       setDocuments({})
       setSelectedId(imported.papers[0]?.id ?? '')
       setCompareIds(imported.papers.map((paper) => paper.id))
-      setMessage('專案已回復；PDF 原檔不在備份中，請逐篇重新附上。')
+      setMessage('專案已回復；JSON 備份不含 PDF 原檔，請逐篇重新附上。')
     } catch (value) { reportError(value) }
     finally { event.target.value = '' }
   }
@@ -347,42 +430,49 @@ export default function App() {
     } catch (value) { if ((value as Error).name !== 'AbortError') reportError(value) }
   }
 
-  return <div className="app-shell">
-    <header className="topbar">
+  return <div className={headerVisible ? 'app-shell' : 'app-shell header-collapsed'}>
+    {headerVisible && <header className="topbar">
       <div className="brand-block">
         <div className="brand-mark">PN</div>
         <div><strong>PaperNavigator</strong><span>證據導向的 AI 論文閱讀器</span></div>
-        <span className="phase-badge">Phase 0–4</span>
       </div>
       <div className="top-actions">
         <span className={navigator.onLine ? 'online-state' : 'online-state offline'}>{navigator.onLine ? '● 線上' : '● 離線'}</span>
+        <button className="ghost-button" onClick={() => setHeaderVisible(false)}>隱藏標題列</button>
         <button className="ghost-button" onClick={() => setSettingsOpen((value) => !value)}>模型 / Key</button>
         <button className="ghost-button" onClick={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })}>備份 JSON</button>
         <button className="primary-button compact" onClick={() => fileRef.current?.click()}>＋ 上傳 PDF</button>
         <input ref={fileRef} hidden type="file" accept="application/pdf,.pdf" multiple onChange={(event) => void importPdfs([...event.target.files ?? []])} />
       </div>
-    </header>
+    </header>}
+    {!headerVisible && <button className="header-restore" onClick={() => setHeaderVisible(true)}>顯示標題列</button>}
 
     {settingsOpen && <section className="settings-panel">
       <div className="settings-heading"><div><span className="eyebrow">AI CONNECTION</span><h2>模型與資料流</h2></div><button className="icon-button" onClick={() => setSettingsOpen(false)} aria-label="關閉設定">×</button></div>
       <div className="settings-grid">
         <label>服務來源<select value={config.id} onChange={(event) => {
           const id = event.target.value as ProviderId
-          setConfig({ id, apiKey: readApiKey(id), baseUrl: id === 'google' ? GOOGLE_BASE_URL : CGU_BASE_URL, modelId: '' })
-          setModels([]); setConnectionState('idle')
+          const next = readProviderConfig(id, defaultProviderConfig(id))
+          setConfig(next)
+          setModels(modelOptions(next.modelId)); setConnectionState('idle')
         }}><option value="google">Google AI Studio（PDF 原生）</option><option value="cgu">CGU LLM Gateway（本機抽文字）</option></select></label>
         <label>Base URL<input value={config.baseUrl} onChange={(event) => setConfig((current) => ({ ...current, baseUrl: event.target.value }))} /></label>
-        <label>API Key<div className="key-row"><input type={showKey ? 'text' : 'password'} autoComplete="off" value={config.apiKey} onChange={(event) => { setConfig((current) => ({ ...current, apiKey: event.target.value })); setConnectionState('idle') }} placeholder="儲存在此瀏覽器 localStorage" /><button className="small-button" onClick={() => setShowKey((value) => !value)}>{showKey ? '隱藏' : '顯示'}</button><button className="small-button" disabled={!config.apiKey} onClick={() => { clearApiKey(config.id); setConfig((current) => ({ ...current, apiKey: '' })); setConnectionState('idle'); setMessage('已清除此服務來源儲存在瀏覽器的 API Key。') }}>清除</button></div></label>
-        <label>模型<select value={config.modelId} disabled={!models.length} onChange={(event) => setConfig((current) => ({ ...current, modelId: event.target.value }))}><option value="">請先測試連線</option>{models.map((model) => <option key={model.id} value={model.id}>{model.displayName || model.id}</option>)}</select></label>
+        <label>API Key<div className="key-row"><input type={showKey ? 'text' : 'password'} autoComplete="off" value={config.apiKey} onChange={(event) => { setConfig((current) => ({ ...current, apiKey: event.target.value })); setConnectionState('idle') }} placeholder="儲存在此瀏覽器 localStorage" /><button className="small-button" onClick={() => setShowKey((value) => !value)}>{showKey ? '隱藏' : '顯示'}</button></div></label>
+        <label>模型<select value={config.modelId} disabled={!models.length} onChange={(event) => { setConfig((current) => ({ ...current, modelId: event.target.value })); setConnectionState('idle') }}><option value="">請先讀取模型清單</option>{models.map((model) => <option key={model.id} value={model.id}>{model.id}</option>)}</select></label>
       </div>
       <div className="settings-footer">
-        <p><strong>隱私：</strong>{config.id === 'google' ? '啟動分析時 PDF 將直接送至 Google Gemini。' : 'PDF 不送至本站；CGU 模式只傳送 PDF.js 在本機擷取的逐頁文字，圈選分析時才傳該區域影像。'} API Key 會依服務來源儲存在此瀏覽器的 localStorage，直到你按「清除」；不會寫入專案、匯出、IndexedDB 或 repository。共用電腦請用完後清除。</p>
-        <button className="secondary-button" disabled={!config.apiKey || connectionState === 'testing'} onClick={() => void testConnection()}>{connectionState === 'testing' ? '測試中…' : connectionState === 'ready' ? '✓ 重新測試' : '測試連線'}</button>
+        <p><strong>本機保存：</strong>Provider、Base URL、模型與 API Key 會保留在此瀏覽器；PDF 原檔、分析與螢光標記保存在 IndexedDB。資料不會寫入 repository，共用電腦請使用紅色「清除設定」及專案清除功能。</p>
+        <div className="settings-actions">
+          <button className="secondary-button" disabled={!config.apiKey || connectionState === 'testing'} onClick={() => void loadModelList()}>讀取模型清單</button>
+          <button className="secondary-button" disabled={!config.apiKey || !config.modelId || connectionState === 'testing'} onClick={() => void testConnection()}>{connectionState === 'ready' ? '✓ 重新測試連線' : '測試連線'}</button>
+          <button className="primary-button" disabled={!config.apiKey || !config.modelId || connectionState === 'testing'} onClick={saveSettings}>儲存設定</button>
+          <button className="danger-button" disabled={connectionState === 'testing'} onClick={clearSettings}>清除設定</button>
+        </div>
       </div>
       <details className="proxy-settings"><summary>進階：後端代理與跨裝置同步（Phase 4）</summary><div className="settings-grid proxy-grid">
         <label>Project Proxy URL<input value={proxyUrl} onChange={(event) => setProxyUrl(event.target.value)} placeholder="https://example.edu/api" /></label>
-        <label>短效存取 Token<input type="password" value={proxyToken} onChange={(event) => setProxyToken(event.target.value)} placeholder="只存記憶體" /></label>
-        <div className="proxy-actions"><button className="small-button" disabled={!proxyUrl} onClick={() => void pushToProjectProxy(proxyUrl, proxyToken, bundle).then(() => setMessage('專案已同步至代理服務。')).catch(reportError)}>推送專案</button><button className="small-button" disabled={!proxyUrl} onClick={() => void pullFromProjectProxy(proxyUrl, proxyToken, bundle.project.id).then((value) => { setBundle(value); setDocuments({}); setMessage('已從代理服務載入；請重新附上 PDF。') }).catch(reportError)}>拉取專案</button></div>
+        <label>短效存取 Token<input type="password" value={proxyToken} onChange={(event) => setProxyToken(event.target.value)} placeholder="儲存在此瀏覽器" /></label>
+        <div className="proxy-actions"><button className="small-button" disabled={!proxyUrl} onClick={() => void pushToProjectProxy(proxyUrl, proxyToken, bundle).then(() => setMessage('專案已同步至代理服務。')).catch(reportError)}>推送專案</button><button className="small-button" disabled={!proxyUrl} onClick={() => void pullFromProjectProxy(proxyUrl, proxyToken, bundle.project.id).then(async (value) => { await clearPdfDocuments(); setBundle(value); setDocuments({}); setMessage('已從代理服務載入；同步資料不含 PDF 原檔，請重新附上。') }).catch(reportError)}>拉取專案</button></div>
       </div><p className="fine-print">代理介面採 PUT/GET `/projects/:id`。正式部署需由機構後端提供驗證、授權與資料保留政策；GitHub Pages 本身不具多人帳號服務。</p></details>
     </section>}
 
@@ -420,7 +510,7 @@ export default function App() {
         <nav className="tabbar" aria-label="閱讀階段">{TABS.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}<small>{item.phase}</small></button>)}</nav>
         {!selectedPaper ? <Welcome onUpload={() => fileRef.current?.click()} /> : <div className="content-scroll">
           <div className="paper-title-row"><div><span className="eyebrow">{selectedPaper.filename}</span><h1>{selectedPaper.title ?? '尚未擷取論文標題'}</h1><p>{selectedPaper.authors.join('、') || '作者未報告'}{selectedPaper.year ? ` · ${selectedPaper.year}` : ''}</p></div><div className="paper-actions"><button className="small-button" onClick={() => exportPaperMarkdown(selectedPaper)}>匯出報告</button><button className="danger-link" onClick={() => removePaper(selectedPaper)}>刪除</button></div></div>
-          {!selectedDocument && <div className="reattach-banner"><div><strong>需要重新附上原始 PDF</strong><p>分析資料已保存，但瀏覽器不永久保存 PDF 原檔。請選擇同一檔案，系統會用 SHA-256 核對。</p></div><button className="secondary-button" onClick={() => reattachRef.current?.click()}>重新附檔</button><input ref={reattachRef} hidden type="file" accept="application/pdf,.pdf" onChange={(event) => void reattach(event.target.files?.[0])} /></div>}
+          {!selectedDocument && <div className="reattach-banner"><div><strong>找不到已保存的原始 PDF</strong><p>可能是瀏覽器儲存空間已被清除。請選擇同一檔案，系統會用 SHA-256 核對並重新保存。</p></div><button className="secondary-button" onClick={() => reattachRef.current?.click()}>重新附檔</button><input ref={reattachRef} hidden type="file" accept="application/pdf,.pdf" onChange={(event) => void reattach(event.target.files?.[0])} /></div>}
           {tab === 'overview' && <Overview paper={selectedPaper} document={selectedDocument} onPass1={runPass1} onPass2={runPass2} onPass3={runPass3} onJump={(page) => setPageIndex(page)} />}
           {tab === 'pass1' && <Pass1View paper={selectedPaper} onRun={runPass1} onEvidence={jumpToEvidence} />}
           {tab === 'pass2' && <Pass2View paper={selectedPaper} onRun={runPass2} onEvidence={jumpToEvidence} onTable={(label, page) => { setTableLabel(label); setTablePage(page ?? 0); setPageIndex(page ?? 0); setTab('tables') }} />}
@@ -431,7 +521,16 @@ export default function App() {
           {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onMarkdown={() => exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={() => { if (window.confirm('清除瀏覽器中的整個專案？請先匯出 JSON 備份。')) void clearBundle().then(() => { setBundle(emptyBundle()); setDocuments({}); setSelectedId('') }) }} />}
         </div>}
       </section>
-      <PdfViewer document={selectedDocument} pageIndex={pageIndex} onPageChange={setPageIndex} onAnalyzeRegion={analyzeRegion} />
+      <PdfViewer
+        document={selectedDocument}
+        paperId={selectedPaper?.id ?? ''}
+        pageIndex={pageIndex}
+        highlights={selectedPaper?.highlights ?? []}
+        onPageChange={setPageIndex}
+        onAnalyzeRegion={analyzeRegion}
+        onAddHighlight={(highlight: PdfHighlight) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: [...paper.highlights, highlight] }))}
+        onDeleteHighlight={(id: string) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))}
+      />
     </main>
   </div>
 }
@@ -519,7 +618,7 @@ interface NotesViewProps {
 }
 
 function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onMarkdown, onJson, onClear }: NotesViewProps) {
-  return <div className="section-stack"><section className="content-card"><div className="card-heading"><div><span className="eyebrow">YOUR ANNOTATIONS</span><h2>個人筆記</h2></div></div><textarea className="note-input" value={text} onChange={(event) => setText(event.target.value)} placeholder="記錄疑問、驗證結果或自己的推論；不會覆蓋 AI 原始輸出。" /><div className="note-actions"><select value={verification} onChange={(event) => setVerification(event.target.value as 'checked' | 'pending' | 'concern')}><option value="pending">待查證</option><option value="checked">已查原文</option><option value="concern">有疑慮</option></select><button className="primary-button compact" disabled={!text.trim()} onClick={onAdd}>加入筆記</button></div><div className="notes-list">{paper.notes.map((note) => <article key={note.id}><span className={`note-state ${note.verification}`}>{note.verification === 'checked' ? '已查原文' : note.verification === 'concern' ? '有疑慮' : '待查證'}</span><p>{note.body}</p><button className="danger-link" onClick={() => onDelete(note.id)}>刪除</button></article>)}</div></section><section className="content-card"><h2>匯出與資料管理</h2><div className="export-grid"><button onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>單篇三遍分析、證據與筆記</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>先匯出備份；PDF 原檔本來就未保存</span></button></div><p className="fine-print">所有匯出均排除 API Key、PDF 原檔與短效代理 Token。CSV 匯出會防止試算表公式注入。</p></section></div>
+  return <div className="section-stack"><section className="content-card"><div className="card-heading"><div><span className="eyebrow">YOUR ANNOTATIONS</span><h2>個人筆記</h2></div></div><textarea className="note-input" value={text} onChange={(event) => setText(event.target.value)} placeholder="記錄疑問、驗證結果或自己的推論；不會覆蓋 AI 原始輸出。" /><div className="note-actions"><select value={verification} onChange={(event) => setVerification(event.target.value as 'checked' | 'pending' | 'concern')}><option value="pending">待查證</option><option value="checked">已查原文</option><option value="concern">有疑慮</option></select><button className="primary-button compact" disabled={!text.trim()} onClick={onAdd}>加入筆記</button></div><div className="notes-list">{paper.notes.map((note) => <article key={note.id}><span className={`note-state ${note.verification}`}>{note.verification === 'checked' ? '已查原文' : note.verification === 'concern' ? '有疑慮' : '待查證'}</span><p>{note.body}</p><button className="danger-link" onClick={() => onDelete(note.id)}>刪除</button></article>)}</div></section><section className="content-card"><h2>匯出與資料管理</h2><div className="export-grid"><button onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>單篇三遍分析、證據與筆記</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>會一併刪除瀏覽器內保存的 PDF 原檔</span></button></div><p className="fine-print">所有匯出均排除 API Key、PDF 原檔與短效代理 Token。CSV 匯出會防止試算表公式注入。</p></section></div>
 }
 
 function EmptyAnalysis({ title, text, action, onRun, disabled }: { title: string; text: string; action?: string; onRun?: () => void; disabled?: boolean }) {

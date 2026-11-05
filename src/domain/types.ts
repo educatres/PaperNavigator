@@ -2,6 +2,19 @@ export type InformationStatus = 'reported' | 'inferred' | 'not_reported' | 'unkn
 export type VerificationStatus = 'matched' | 'unverified' | 'mismatch'
 export type ReadingDecision = 'continue' | 'later' | 'stop'
 export type ProviderId = 'google' | 'cgu'
+export type PdfHighlightColor = 'yellow' | 'green' | 'pink' | 'blue'
+
+export interface PdfHighlight {
+  id: string
+  paperId: string
+  pdfPageIndex: number
+  x: number
+  y: number
+  width: number
+  height: number
+  color: PdfHighlightColor
+  createdAt: string
+}
 
 export interface SourceEvidence {
   id: string
@@ -88,6 +101,7 @@ export interface Paper {
   evidence: SourceEvidence[]
   observations: MetricObservation[]
   notes: UserNote[]
+  highlights: PdfHighlight[]
   analysisModel?: string
   promptVersion?: string
 }

@@ -5,12 +5,12 @@
 - GitHub Pages 相對路徑與 Actions workflow：完成。
 - PDF.js 本機解析、預覽、文字與 SHA-256：完成。
 - Google PDF structured output、CGU text structured output：完成。
-- 動態模型清單、Provider 分離的 Key localStorage／清除控制、錯誤／重試／取消／usage：完成。
+- 指定模型清單、文字生成連線測試、完整 Provider 設定保存／清除、600 秒逾時、錯誤／重試／取消／usage：完成。
 - 最終 live API 驗收：需由使用者以自己的 Key 按「測試連線」執行，repository 不含憑證。
 
 ## Phase 1｜可用 MVP
 
-- 書架、第一遍、第二遍、表格三步分析、Evidence 跳頁、筆記、Markdown／JSON：完成。
+- 書架、PDF 原檔持久化、多色螢光標記、第一遍、相容精簡回應的第二遍、表格三步分析、Evidence 跳頁、筆記、Markdown／JSON：完成。
 
 ## Phase 2｜比較
 

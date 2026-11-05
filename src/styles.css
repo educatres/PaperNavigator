@@ -41,12 +41,15 @@ p { line-height: 1.7; }
 .ghost-button, .icon-button, .small-button, .text-button, .danger-link { border: 0; cursor: pointer; background: transparent; }
 .ghost-button { color: #d8e0df; border: 1px solid rgba(255,255,255,.18); border-radius: 5px; padding: 8px 11px; font-size: 12px; }
 .ghost-button:hover { border-color: rgba(255,255,255,.42); color: white; }
-.primary-button, .secondary-button { min-height: 42px; padding: 9px 16px; border-radius: 5px; border: 1px solid transparent; cursor: pointer; font-weight: 600; }
+.primary-button, .secondary-button, .danger-button { min-height: 42px; padding: 9px 16px; border-radius: 5px; border: 1px solid transparent; cursor: pointer; font-weight: 600; }
 .primary-button { background: var(--accent); color: #fff; box-shadow: 0 4px 12px rgba(169,71,46,.18); }
 .primary-button:hover { background: var(--accent-dark); }
 .primary-button.compact { min-height: 36px; padding: 7px 13px; font-size: 12px; }
 .secondary-button { color: var(--ink); background: #fff; border-color: #c8c5bd; }
 .secondary-button:hover { border-color: var(--accent); }
+.danger-button { color: #fff; background: #a43e30; border-color: #8c3328; }
+.danger-button:hover { background: #842f25; }
+.header-restore { position: fixed; z-index: 40; top: 9px; right: 12px; min-height: 32px; padding: 6px 11px; border: 1px solid rgba(255,255,255,.3); border-radius: 5px; color: #fff; background: rgba(23,43,53,.9); box-shadow: 0 5px 18px rgba(18,33,39,.18); cursor: pointer; font-size: 11px; }
 .small-button { padding: 6px 9px; border: 1px solid #c9c6be; border-radius: 4px; color: #435259; background: #fff; font-size: 11px; white-space: nowrap; }
 .small-button:hover, .small-button.active { color: var(--accent-dark); border-color: var(--accent); }
 .small-button.full { width: 100%; padding: 9px; }
@@ -65,7 +68,9 @@ textarea { resize: vertical; min-height: 72px; }
 .key-row { display: flex; gap: 6px; }
 .key-row .small-button { margin-top: 5px; }
 .settings-footer { align-items: center; padding-top: 11px; border-top: 1px solid #dedbd3; }
-.settings-footer p { max-width: 900px; margin: 0; color: #607074; font-size: 12px; }
+.settings-footer p { max-width: 900px; flex: 1; margin: 0; color: #607074; font-size: 12px; }
+.settings-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+.settings-actions button { min-height: 38px; padding: 8px 11px; font-size: 11px; white-space: nowrap; }
 .proxy-settings { margin-top: 12px; border-top: 1px solid #dedbd3; padding-top: 10px; }
 .proxy-settings summary { cursor: pointer; color: #4e6168; font-size: 12px; font-weight: 600; }
 .proxy-grid { grid-template-columns: 1.4fr 1fr auto; align-items: end; margin-bottom: 6px; }
@@ -92,6 +97,7 @@ textarea { resize: vertical; min-height: 72px; }
 .error-banner button { border: 0; background: none; cursor: pointer; font-size: 16px; }
 
 .workspace-layout { height: calc(100vh - 104px); min-height: 680px; display: grid; grid-template-columns: 230px minmax(520px, 1fr) minmax(330px, 39%); gap: 0; background: var(--paper); }
+.header-collapsed .workspace-layout { height: calc(100vh - 36px); }
 .library-panel, .content-panel, .pdf-panel { min-width: 0; min-height: 0; }
 .library-panel { display: flex; flex-direction: column; background: #efede7; border-right: 1px solid var(--line); }
 .project-editor { padding: 18px 14px 14px; border-bottom: 1px solid var(--line); }
@@ -294,11 +300,23 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-toolbar span { color: #98a9aa; font: 9px 'DM Mono', monospace; }
 .pdf-toolbar .icon-button, .pdf-toolbar .small-button { color: #d7dfde; border-color: #53656c; background: #31474f; }
 .pdf-viewport { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 14px; text-align: center; }
-.pdf-viewport.selecting { cursor: crosshair; touch-action: none; }
+.pdf-viewport.mode-highlight, .pdf-viewport.mode-roi { cursor: crosshair; }
+.pdf-canvas-stage { position: relative; display: inline-block; line-height: 0; }
+.pdf-viewport.mode-highlight .pdf-canvas-stage, .pdf-viewport.mode-roi .pdf-canvas-stage { touch-action: none; }
 .pdf-viewport canvas { display: block; margin: 0 auto; background: #fff; box-shadow: 0 4px 18px rgba(21,31,34,.2); }
 .roi-selection { position: absolute; z-index: 2; border: 2px solid var(--accent); background: rgba(214,104,72,.15); pointer-events: none; }
+.highlight-selection { position: absolute; z-index: 4; border: 1px solid rgba(153,119,0,.7); background: rgba(246,211,73,.35); pointer-events: none; }
+.pdf-highlight { position: absolute; z-index: 3; min-width: 5px; min-height: 5px; padding: 0; border: 0; border-radius: 2px; mix-blend-mode: multiply; pointer-events: none; }
+.pdf-highlight.erase-ready { z-index: 5; pointer-events: auto; cursor: not-allowed; }
+.pdf-highlight.erase-ready:hover { outline: 2px solid #b44031; outline-offset: 1px; }
 .roi-actions { padding: 10px; border-top: 1px solid #bbb8b1; background: #eeece6; }
 .roi-actions p { margin: 0 0 7px; color: #657376; font-size: 9px; }
+.pdf-annotation-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border-top: 1px solid #bbb8b1; background: #fff8d9; }
+.pdf-annotation-actions p { margin: 0; color: #675e3b; font-size: 9px; }
+.pdf-annotation-actions.erase-hint { background: #f8e8e3; }
+.highlight-palette { display: flex; gap: 6px; }
+.highlight-palette button { width: 24px; height: 24px; padding: 0; border: 2px solid rgba(51,62,65,.2); border-radius: 50%; cursor: pointer; }
+.highlight-palette button.active { border-color: var(--ink); box-shadow: 0 0 0 2px #fff; }
 .roi-result { max-height: 150px; overflow-y: auto; margin-top: 8px; padding: 9px; background: #fff; color: #42545b; font-size: 10px; line-height: 1.6; white-space: pre-wrap; }
 .inline-error { padding: 10px; color: #8c3e2e; background: #f9e6df; }
 .empty-viewer { display: grid; place-items: center; color: #7a8484; text-align: center; }
@@ -340,6 +358,8 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
   .pdf-panel { min-height: 560px; }
   .settings-grid, .proxy-grid, .two-column, .five-c-grid, .metric-grid, .citation-network, .export-grid, .filter-row { grid-template-columns: 1fr; }
   .settings-footer, .paper-title-row, .reattach-banner { align-items: stretch; flex-direction: column; }
+  .settings-actions { justify-content: stretch; }
+  .settings-actions button { flex: 1 1 45%; }
   .inline-form { align-items: stretch; flex-direction: column; }
   .inline-form label:first-child, .inline-form label:nth-child(2) { width: 100%; }
   .welcome { padding: 50px 18px; }

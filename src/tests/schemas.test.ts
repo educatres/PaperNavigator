@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizePass1Response, pass1Schema, validatePass1 } from '../domain/schemas'
+import { normalizePass1Response, normalizePass2Response, pass1Schema, pass2Schema, validatePass1 } from '../domain/schemas'
 
 function validPass1() {
   return {
@@ -65,5 +65,22 @@ describe('Pass 1 validation', () => {
     expect(parsed.oneSentenceTopic).toBe('只有摘要')
     expect(parsed.researchQuestion).toBe('未找到研究問題')
     expect(parsed.authors).toEqual([])
+  })
+})
+
+describe('Pass 2 compatibility', () => {
+  it('accepts a useful compact response and fills omitted structural fields', () => {
+    const parsed = pass2Schema.parse(normalizePass2Response({ result: {
+      motivation: '降低推論成本',
+      problem: '如何維持準確率？',
+      steps: ['壓縮模型', '評估結果'],
+      results: [{ method: 'Method A', task: '分類', metric: 'Accuracy', value: '92%' }],
+    } }))
+
+    expect(parsed.problemDefinition).toBe('如何維持準確率？')
+    expect(parsed.methodSteps).toEqual(['壓縮模型', '評估結果'])
+    expect(parsed.observations[0]).toMatchObject({ methodName: 'Method A', metricName: 'Accuracy', rawValue: '92%' })
+    expect(parsed.datasets).toEqual([])
+    expect(parsed.evidence).toEqual([])
   })
 })

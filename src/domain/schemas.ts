@@ -260,6 +260,152 @@ export function normalizePass1Response(value: unknown): unknown {
   }
 }
 
+function rows(value: unknown) {
+  return Array.isArray(value) ? value : []
+}
+
+function statusValue(value: unknown) {
+  const raw = text(value).toLowerCase()
+  return raw === 'reported' || raw === 'inferred' || raw === 'not_reported' || raw === 'unknown' ? raw : 'unknown'
+}
+
+function directionValue(value: unknown) {
+  const raw = text(value).toLowerCase()
+  return raw === 'higher' || raw === 'lower' ? raw : 'unknown'
+}
+
+function numericValue(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  const parsed = Number.parseFloat(text(value).replace(/,/g, ''))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/**
+ * Pass 2 contains many nested fields and some providers omit null/empty values.
+ * Fill structural defaults and common aliases while keeping unknown paper facts
+ * explicit, so a useful partial analysis is not discarded for missing metadata.
+ */
+export function normalizePass2Response(value: unknown): unknown {
+  const outer = record(value)
+  const wrapped = first(outer, ['result', 'pass2', 'analysis', 'data'])
+  const source = Object.keys(record(wrapped)).length ? record(wrapped) : outer
+  const list = (keys: string[]) => rows(first(source, keys))
+
+  const datasets = list(['datasets', 'dataSets', 'data']).map((item) => {
+    const row = record(item)
+    return {
+      name: text(first(row, ['name', 'dataset', 'title']), '未命名資料集'),
+      version: nullableText(first(row, ['version', 'datasetVersion'])),
+      size: nullableText(first(row, ['size', 'scale', 'samples'])),
+      split: nullableText(first(row, ['split', 'partition'])),
+      externalValidation: nullableText(first(row, ['externalValidation', 'external_validation', 'validation'])),
+      leakageRisk: nullableText(first(row, ['leakageRisk', 'leakage_risk', 'leakage'])),
+      status: statusValue(first(row, ['status', 'informationStatus'])),
+      evidenceIds: evidenceIds(first(row, ['evidenceIds', 'evidence', 'sources'])),
+    }
+  })
+
+  const metrics = list(['metrics', 'evaluationMetrics']).map((item) => {
+    const row = record(item)
+    return {
+      name: text(first(row, ['name', 'metric', 'metricName']), '未命名指標'),
+      definition: nullableText(first(row, ['definition', 'description', 'metricDefinition'])),
+      direction: directionValue(first(row, ['direction', 'betterWhen'])),
+      unit: nullableText(first(row, ['unit', 'units'])),
+      evidenceIds: evidenceIds(first(row, ['evidenceIds', 'evidence', 'sources'])),
+    }
+  })
+
+  const indexItems = (keys: string[], fallback: string) => list(keys).map((item, index) => {
+    const row = record(item)
+    return {
+      label: text(first(row, ['label', 'id', 'name']), `${fallback} ${index + 1}`),
+      title: text(first(row, ['title', 'caption', 'name']), '未提供標題'),
+      pdfPageIndex: integerValue(first(row, ['pdfPageIndex', 'pageIndex'])) ?? (() => {
+        const display = integerValue(first(row, ['page', 'pageNumber', 'pdfPageDisplay']))
+        return display !== null && display > 0 ? display - 1 : null
+      })(),
+      purpose: text(first(row, ['purpose', 'role']), '未提供用途'),
+      interpretation: text(first(row, ['interpretation', 'summary', 'finding']), '待人工解讀'),
+      checkItems: stringList(first(row, ['checkItems', 'checks', 'cautions'])),
+    }
+  })
+
+  const claims = list(['claims', 'claimEvidence']).map((item) => {
+    const row = record(item)
+    return {
+      claim: text(first(row, ['claim', 'statement']), '未提供主張'),
+      support: text(first(row, ['support', 'evidence', 'result']), '未找到支持證據'),
+      limitation: text(first(row, ['limitation', 'limits', 'caveat']), '未報告限制'),
+      evidenceIds: evidenceIds(first(row, ['evidenceIds', 'sources', 'sourceIds'])),
+    }
+  })
+
+  const observations = list(['observations', 'results', 'metricObservations']).map((item, index) => {
+    const row = record(item)
+    const origin = text(first(row, ['methodOrigin', 'origin'])).toLowerCase()
+    const methodOrigin = origin.includes('baseline') ? 'reproduced_baseline'
+      : origin.includes('prior') || origin.includes('cited') ? 'cited_prior_work' : 'paper_proposed'
+    return {
+      id: text(first(row, ['id', 'observationId']), `observation-${index + 1}`),
+      paperId: text(row.paperId),
+      methodName: text(first(row, ['methodName', 'method', 'model']), '未命名方法'),
+      methodOrigin,
+      task: text(first(row, ['task', 'problem']), '未報告任務'),
+      dataset: nullableText(first(row, ['dataset', 'datasetName'])),
+      datasetVersion: nullableText(first(row, ['datasetVersion', 'version'])),
+      split: nullableText(first(row, ['split', 'partition'])),
+      metricName: text(first(row, ['metricName', 'metric']), '未命名指標'),
+      metricDefinition: nullableText(first(row, ['metricDefinition', 'definition'])),
+      direction: directionValue(first(row, ['direction', 'betterWhen'])),
+      rawValue: text(first(row, ['rawValue', 'value', 'result']), '未報告'),
+      numericValue: numericValue(first(row, ['numericValue', 'valueNumber'])),
+      unit: nullableText(first(row, ['unit', 'units'])),
+      dispersion: nullableText(first(row, ['dispersion', 'variance', 'std'])),
+      pretrainedData: nullableText(first(row, ['pretrainedData', 'pretrainingData'])),
+      hardware: nullableText(first(row, ['hardware', 'compute'])),
+      protocol: nullableText(first(row, ['protocol', 'evaluationProtocol'])),
+      status: statusValue(first(row, ['status', 'informationStatus'])),
+      evidenceIds: evidenceIds(first(row, ['evidenceIds', 'evidence', 'sources'])),
+    }
+  })
+
+  const references = list(['references', 'citations', 'bibliography']).map((item, index) => {
+    const row = record(item)
+    const verification = text(first(row, ['verification', 'status'])).toLowerCase()
+    return {
+      id: text(first(row, ['id', 'citationId']), `reference-${index + 1}`),
+      raw: text(first(row, ['raw', 'citation', 'reference', 'text']), '未提供完整引用'),
+      title: nullableText(first(row, ['title', 'paperTitle'])),
+      authors: stringList(first(row, ['authors', 'author'])),
+      year: yearValue(row.year),
+      doi: nullableText(first(row, ['doi', 'DOI'])),
+      verification: verification === 'externally_verified' || verification === 'unverified' ? verification : 'paper_only',
+    }
+  })
+
+  return {
+    schemaVersion: '1.0',
+    promptVersion: 'pass2.v1',
+    motivation: text(first(source, ['motivation', 'researchMotivation']), '未找到研究動機'),
+    problemDefinition: text(first(source, ['problemDefinition', 'problem', 'researchProblem']), '未找到問題定義'),
+    inputOutput: text(first(source, ['inputOutput', 'inputsAndOutputs', 'io']), '未找到輸入與輸出說明'),
+    methodSteps: stringList(first(source, ['methodSteps', 'steps', 'method'])),
+    modules: stringList(first(source, ['modules', 'components'])),
+    trainingSetup: nullableText(first(source, ['trainingSetup', 'training'])),
+    inferenceSetup: nullableText(first(source, ['inferenceSetup', 'inference'])),
+    datasets,
+    metrics,
+    figures: indexItems(['figures', 'figureIndex'], 'Figure'),
+    tables: indexItems(['tables', 'tableIndex'], 'Table'),
+    claims,
+    guideQuestions: stringList(first(source, ['guideQuestions', 'questions', 'readingQuestions'])).slice(0, 5),
+    observations,
+    references,
+    evidence: normalizeEvidence(first(source, ['evidence', 'sources', 'sourceRefs'])),
+  }
+}
+
 export function validatePass1(value: unknown, pageCount: number, paperId: string): Pass1Result {
   const parsed = pass1Schema.parse(normalizePass1Response(value))
   const evidence = parsed.evidence.map((item) => {
@@ -341,7 +487,7 @@ export const pass2Schema = z.object({
   figures: z.array(z.object({ label: z.string(), title: z.string(), pdfPageIndex: z.number().int().nullable(), purpose: z.string(), interpretation: z.string(), checkItems: z.array(z.string()) })),
   tables: z.array(z.object({ label: z.string(), title: z.string(), pdfPageIndex: z.number().int().nullable(), purpose: z.string(), interpretation: z.string(), checkItems: z.array(z.string()) })),
   claims: z.array(z.object({ claim: z.string(), support: z.string(), limitation: z.string(), evidenceIds: evidenceIdsSchema })),
-  guideQuestions: z.array(z.string()).min(3).max(5),
+  guideQuestions: z.array(z.string()).max(5),
   observations: z.array(metricObservationSchema),
   references: z.array(citationSchema),
   evidence: z.array(sourceEvidenceSchema),
@@ -399,7 +545,7 @@ export const PASS2_JSON_SCHEMA = {
     metrics: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { name: { type: 'string' }, definition: nullableStringJson, direction: { type: 'string', enum: ['higher', 'lower', 'unknown'] }, unit: nullableStringJson, evidenceIds: evidenceIdsJson }, required: ['name', 'definition', 'direction', 'unit', 'evidenceIds'] } },
     figures: { type: 'array', items: indexJson }, tables: { type: 'array', items: indexJson },
     claims: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { claim: { type: 'string' }, support: { type: 'string' }, limitation: { type: 'string' }, evidenceIds: evidenceIdsJson }, required: ['claim', 'support', 'limitation', 'evidenceIds'] } },
-    guideQuestions: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'string' } },
+    guideQuestions: { type: 'array', maxItems: 5, items: { type: 'string' } },
     observations: { type: 'array', items: metricObservationJson },
     references: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { id: { type: 'string' }, raw: { type: 'string' }, title: nullableStringJson, authors: { type: 'array', items: { type: 'string' } }, year: { type: ['integer', 'null'] }, doi: nullableStringJson, verification: { type: 'string', enum: ['paper_only', 'externally_verified', 'unverified'] } }, required: ['id', 'raw', 'title', 'authors', 'year', 'doi', 'verification'] } },
     evidence: { type: 'array', items: PASS1_JSON_SCHEMA.properties.evidence.items },

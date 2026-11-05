@@ -18,7 +18,7 @@ describe('CSV export', () => {
   it('escapes values that spreadsheet software could execute as formulas', () => {
     const paper: Paper = {
       id: 'p', projectId: 'project', sha256: 'hash', filename: 'p.pdf', title: '=HYPERLINK("bad")',
-      authors: [], year: null, doi: null, pageCount: 1, size: 1, uploadTime: '', tableAnalyses: [], citations: [], evidence: [], notes: [],
+      authors: [], year: null, doi: null, pageCount: 1, size: 1, uploadTime: '', tableAnalyses: [], citations: [], evidence: [], notes: [], highlights: [],
       observations: [{ id: 'o', paperId: 'p', methodName: '+SUM(1,1)', methodOrigin: 'paper_proposed', task: 'task', dataset: null, datasetVersion: null, split: null, metricName: 'Accuracy', metricDefinition: null, direction: 'higher', rawValue: '92%', numericValue: 92, unit: '%', dispersion: null, pretrainedData: null, hardware: null, protocol: null, status: 'reported', evidenceIds: [] }],
     }
     const csv = comparisonCsv([paper])

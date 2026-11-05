@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "proxy:dev": "node server/project-proxy.mjs",
     "typecheck": "tsc -b --pretty false",
-    "test": "vitest run"
+    "test": "vitest run src/tests"
   },
   "dependencies": {
     "pdfjs-dist": "^6.4.299",

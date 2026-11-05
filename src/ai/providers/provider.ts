@@ -4,6 +4,8 @@ import { SYSTEM_INSTRUCTIONS, wrapUntrusted } from '../security'
 
 export const GOOGLE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 export const CGU_BASE_URL = 'https://air.cgu.edu.tw/cgullmapi/v1'
+export const DEFAULT_MODEL_ID = 'gemma-4-26b-a4b-it'
+export const SUPPORTED_MODEL_IDS = [DEFAULT_MODEL_ID, 'gpt-oss-120b'] as const
 
 interface RawGeneration {
   text: string
@@ -30,7 +32,7 @@ async function fetchWithRetry(url: string, init: RequestInit, externalSignal?: A
   let lastError: unknown
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort('timeout'), 240_000)
+    const timeout = window.setTimeout(() => controller.abort('timeout'), 600_000)
     const abort = () => controller.abort(externalSignal?.reason)
     externalSignal?.addEventListener('abort', abort, { once: true })
     try {
@@ -45,6 +47,7 @@ async function fetchWithRetry(url: string, init: RequestInit, externalSignal?: A
     } catch (error) {
       lastError = error
       if (externalSignal?.aborted) throw new DOMException('分析已取消。', 'AbortError')
+      if (controller.signal.aborted && controller.signal.reason === 'timeout') throw new Error('API 請求逾時（600 秒），請重試或改用較快的模型。')
       if (error instanceof Error && /API Key|權限|請求格式|不存在|內容太大/.test(error.message)) throw error
       if (attempt === 2) {
         if (error instanceof DOMException && error.name === 'AbortError') throw new Error('API 請求逾時，請重試或改用較快的模型。')
@@ -76,12 +79,13 @@ export async function listModels(config: ProviderConfig, signal?: AbortSignal): 
     return (body.models ?? [])
       .filter((model: any) => (model.supportedGenerationMethods ?? []).includes('generateContent'))
       .map((model: any) => ({ id: String(model.name ?? '').replace(/^models\//, ''), displayName: String(model.displayName ?? model.name ?? '') }))
-      .filter((model: ModelInfo) => model.id && /gemini/i.test(model.id))
+      .filter((model: ModelInfo) => SUPPORTED_MODEL_IDS.some((id) => id.toLowerCase() === model.id.toLowerCase()))
   }
   const body = await fetchWithRetry(`${base}/models`, { headers: bearerHeaders(config.apiKey) }, signal)
   const rows = Array.isArray(body) ? body : body.data ?? body.models ?? []
   return rows.map((model: any) => ({ id: String(model.id ?? model.name ?? ''), displayName: String(model.displayName ?? model.id ?? model.name ?? '') }))
     .filter((model: ModelInfo) => model.id && !/(image|embedding|transcri|speech|tts|realtime|whisper)/i.test(`${model.id} ${model.displayName}`))
+    .filter((model: ModelInfo) => SUPPORTED_MODEL_IDS.some((id) => id.toLowerCase() === model.id.toLowerCase()))
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -112,6 +116,31 @@ function usageFromOpenAi(body: any): AnalysisUsage {
   return { inputTokens, outputTokens, totalTokens: usage.total_tokens ?? (inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : null) }
 }
 
+export async function testProviderConnection(config: ProviderConfig, signal?: AbortSignal) {
+  if (!config.apiKey.trim()) throw new Error('請先輸入 API Key。')
+  if (!config.modelId) throw new Error('請先讀取模型清單並選擇模型。')
+  const base = config.baseUrl.replace(/\/$/, '')
+  const prompt = '這是 PaperNavigator 連線測試。請只回覆 OK。'
+
+  if (config.id === 'google') {
+    const body = await fetchWithRetry(`${base}/models/${encodeURIComponent(config.modelId)}:generateContent`, {
+      method: 'POST', headers: googleHeaders(config.apiKey),
+      body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { maxOutputTokens: 32, temperature: 0 } }),
+    }, signal)
+    const text = googleText(body).trim()
+    if (!text) throw new Error('模型已回應，但沒有可讀取的文字內容。')
+    return text
+  }
+
+  const body = await fetchWithRetry(`${base}/responses`, {
+    method: 'POST', headers: bearerHeaders(config.apiKey),
+    body: JSON.stringify({ model: config.modelId, instructions: '只執行連線測試，不要延伸回答。', input: prompt, store: false, max_output_tokens: 32, reasoning: { effort: 'low' } }),
+  }, signal)
+  const text = responsesText(body).trim()
+  if (!text) throw new Error('模型已回應，但沒有可讀取的文字內容。')
+  return text
+}
+
 export async function generateStructured(
   config: ProviderConfig,
   document: PdfDocumentData,
@@ -139,10 +168,10 @@ export async function generateStructured(
   }
   const source = wrapUntrusted('pdf-extracted-text', pagesForPrompt(document))
   const input = `${prompt}\n\n以下為 PDF.js 本機擷取的逐頁文字；頁面標記是引用定位依據：\n${source}`
-  if (/luna/i.test(config.modelId)) {
+  if (config.id === 'cgu' && config.modelId !== 'gpt-oss:20b') {
     const body = await fetchWithRetry(`${base}/responses`, {
       method: 'POST', headers: bearerHeaders(config.apiKey),
-      body: JSON.stringify({ model: config.modelId, instructions: SYSTEM_INSTRUCTIONS, input, max_output_tokens: 8192, reasoning: { effort: 'medium' } }),
+      body: JSON.stringify({ model: config.modelId, instructions: SYSTEM_INSTRUCTIONS, input, store: false, max_output_tokens: 8192, reasoning: { effort: 'medium' } }),
     }, signal)
     const text = responsesText(body)
     if (!text) throw new Error('模型已回應，但沒有 JSON 文字內容。')

@@ -6,7 +6,8 @@ Schema version：`1.0`。
 
 ## 來源與分析分離
 
-- `Paper`：檔案 hash、書目 metadata、各閱讀階段、observations、evidence、table analyses、citations 與 notes。
+- `Paper`：檔案 hash、書目 metadata、各閱讀階段、observations、evidence、table analyses、citations、notes 與 PDF highlights。
+- `PdfHighlight`：paper／頁碼、0–1 正規化矩形座標、顏色與建立時間；不建立便條。
 - `SourceEvidence`：`paperId`、0-based `pdfPageIndex`、1-based `pdfPageDisplay`、印刷頁、section、object type／label、短摘錄、核對狀態與備註。
 - `MetricObservation`：方法來源、task、dataset／version、split、metric definition／direction、raw value、numeric value、unit、pretraining、hardware、protocol 與 evidence IDs。
 - `Pass1Result`：metadata、研究問題、五個 C、貢獻、閱讀決策與 evidence。
@@ -19,4 +20,4 @@ Schema version：`1.0`。
 
 ## 遷移與秘密清洗
 
-`migrateBundle` 為缺少的新陣列欄位補預設值。保存與匯出前會遞迴移除 `apiKey`、`token`、`File` 與 PDF `bytes` 欄位；匯入資料也會經過同一層清洗。
+`migrateBundle` 為缺少的新陣列欄位（包含 highlights）補預設值。ProjectBundle 保存與匯出前會遞迴移除 `apiKey`、`token`、`File` 與 PDF `bytes` 欄位；PDF Blob 只走獨立的 IndexedDB store，不進 JSON 匯出。
