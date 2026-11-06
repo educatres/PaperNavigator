@@ -34,12 +34,14 @@ describe('annotation export', () => {
       authors: [], year: null, doi: null, pageCount: 2, size: 1, uploadTime: '', tableAnalyses: [], citations: [],
       evidence: [{ id: 'e1', paperId: 'p', pdfPageIndex: 1, pdfPageDisplay: 2, printedPage: null, section: null, objectType: 'text', objectLabel: null, quote: '定位文字', verificationStatus: 'matched', notes: null }],
       observations: [], notes: [],
-      highlights: [{ id: 'h1', paperId: 'p', pdfPageIndex: 0, x: 0, y: 0, width: 1, height: 0.1, color: 'yellow', text: '螢光文字', createdAt: '' }],
+      highlights: [{ id: 'h1', paperId: 'p', pdfPageIndex: 0, x: 0, y: 0, width: 1, height: 0.1, color: 'yellow', text: '螢光文字', aiSummary: '摘要文字', translation: '翻譯文字', createdAt: '' }],
       aiRegionSummaries: [{ id: 'a1', paperId: 'p', pdfPageIndex: 1, summary: '圈選摘要', createdAt: '' }],
     }
 
     const markdown = paperMarkdown(paper)
     expect(markdown).toContain('螢光文字')
+    expect(markdown).toContain('摘要文字')
+    expect(markdown).toContain('翻譯文字')
     expect(markdown).toContain('定位文字')
     expect(markdown).toContain('圈選摘要')
   })

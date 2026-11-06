@@ -14,7 +14,17 @@ export interface PdfHighlight {
   height: number
   color: PdfHighlightColor
   text?: string
+  rects?: PdfHighlightRect[]
+  aiSummary?: string
+  translation?: string
   createdAt: string
+}
+
+export interface PdfHighlightRect {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 
 export interface AiRegionSummary {

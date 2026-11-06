@@ -6,8 +6,9 @@ import { comparisonRows, compareRows } from './domain/comparison'
 import type { ComparisonRow } from './domain/comparison'
 import { analyzePass1, analyzePass2, analyzePass3 } from './ai/orchestrator/analysis'
 import type { FormatRetryHandler } from './ai/orchestrator/analysis'
-import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
+import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
 import { roiPrompt } from './ai/prompts/prompts'
+import { wrapUntrusted } from './ai/security'
 import { readPdf } from './pdf/pdfClient'
 import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
 import { exportBibTeX, exportComparisonCsv, exportPaperMarkdown, exportProjectJson, exportRis, importProjectJson } from './storage/exports'
@@ -301,14 +302,14 @@ export default function App() {
     setMessage('已清除所有 AI 連線設定，並恢復 CGU／Gemma 預設值。')
   }
 
-  const startJob = async (label: string, task: (signal: AbortSignal) => Promise<void>) => {
-    if (!selectedPaper || !selectedDocument) { setError('請先選取並附上 PDF。'); return }
+  const startJob = async (label: string, task: (signal: AbortSignal) => Promise<void>, requiresDocument = true) => {
+    if (!selectedPaper || (requiresDocument && !selectedDocument)) { setError(requiresDocument ? '請先選取並附上 PDF。' : '請先選取論文。'); return }
     if (!config.apiKey || !config.modelId) { setSettingsOpen(true); setError('請先輸入 API Key、測試連線並選擇模型。'); return }
     const controller = new AbortController()
     abortRef.current = controller
     setBusy(label)
     setError('')
-    setMessage(`${label}。PDF 將傳送至所選 AI 服務；費用依目前帳號、模型與使用量而定。`)
+    setMessage(`${label}。${requiresDocument ? 'PDF 將傳送' : '選取的文字將傳送'}至所選 AI 服務；費用依目前帳號、模型與使用量而定。`)
     try { await task(controller.signal); setMessage(`${label.replace('正在', '')}完成。`) }
     catch (value) { if ((value as Error)?.name !== 'AbortError') reportError(value); else setMessage('分析已取消。') }
     finally { setBusy(''); abortRef.current = null }
@@ -359,6 +360,30 @@ export default function App() {
   const addAiRegionSummary = (summary: AiRegionSummary) => {
     if (!selectedPaper) return
     updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: [...(paper.aiRegionSummaries ?? []), summary] }))
+  }
+
+  const runHighlightTextAction = (highlightId: string, action: 'summary' | 'translation') => {
+    const highlight = selectedPaper?.highlights.find((item) => item.id === highlightId)
+    if (!highlight?.text?.trim()) { setError('這個螢光標記沒有可處理的文字。'); return }
+    const label = action === 'summary' ? '正在產生螢光標記 AI 摘要' : '正在翻譯螢光標記'
+    void startJob(label, async (signal) => {
+      const prompt = action === 'summary'
+        ? `請用繁體中文摘要下列論文原文，保留關鍵條件、數值與限制，最多 3 句。不要加入原文沒有的推論。\n${wrapUntrusted('highlight-text', highlight.text!)}`
+        : `請將下列論文原文翻譯成自然、準確的繁體中文。只輸出翻譯，不要加前言或解釋。\n${wrapUntrusted('highlight-text', highlight.text!)}`
+      const response = await generateText(config, prompt, signal)
+      setLastUsage(response.usage)
+      const value = response.text.trim()
+      if (!value) throw new Error('模型沒有回傳可保存的文字。')
+      updatePaper(selectedPaper!.id, (paper) => ({
+        ...paper,
+        highlights: paper.highlights.map((item) => item.id === highlightId ? { ...item, [action === 'summary' ? 'aiSummary' : 'translation']: value } : item),
+      }))
+    }, false)
+  }
+
+  const updateHighlightColor = (highlightId: string, color: PdfHighlight['color']) => {
+    if (!selectedPaper) return
+    updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((item) => item.id === highlightId ? { ...item, color } : item) }))
   }
 
   const jumpToEvidence = (evidenceId: string) => {
@@ -500,7 +525,7 @@ export default function App() {
           {tab === 'pass3' && <Pass3View paper={selectedPaper} userPlan={userPlan} setUserPlan={setUserPlan} onRun={runPass3} />}
           {tab === 'compare' && <CompareView papers={bundle.papers} selectedIds={compareIds} setSelectedIds={setCompareIds} query={compareQuery} setQuery={setCompareQuery} rows={rows} comparison={comparison} onExport={() => exportComparisonCsv(selectedComparePapers)} onSelectPaper={(id: string, page: number | null) => { setSelectedId(id); setPageIndex(page ?? 0) }} />}
           {tab === 'research' && <ResearchView papers={bundle.papers} coCitations={coCitations} onVerify={(paperId: string, citationId: string) => void verifyReference(paperId, citationId)} onBib={() => exportBibTeX(bundle.papers)} onRis={() => exportRis(bundle.papers)} />}
-          {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onDeleteAiSummary={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: (paper.aiRegionSummaries ?? []).filter((summary) => summary.id !== id) }))} onJump={setPageIndex} onMarkdown={() => exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={() => { if (window.confirm('清除瀏覽器中的整個專案？請先匯出 JSON 備份。')) void clearBundle().then(() => { setBundle(emptyBundle()); setDocuments({}); setSelectedId('') }) }} />}
+          {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onDeleteHighlight={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))} onDeleteAiSummary={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: (paper.aiRegionSummaries ?? []).filter((summary) => summary.id !== id) }))} onHighlightAction={runHighlightTextAction} onChangeHighlightColor={updateHighlightColor} onJump={setPageIndex} onMarkdown={() => exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={() => { if (window.confirm('清除瀏覽器中的整個專案？請先匯出 JSON 備份。')) void clearBundle().then(() => { setBundle(emptyBundle()); setDocuments({}); setSelectedId('') }) }} />}
         </div>}
       </section>
       <PdfViewer
@@ -591,16 +616,53 @@ interface NotesViewProps {
   setVerification: (value: 'checked' | 'pending' | 'concern') => void
   onAdd: () => void
   onDelete: (id: string) => void
+  onDeleteHighlight: (id: string) => void
   onDeleteAiSummary: (id: string) => void
+  onHighlightAction: (id: string, action: 'summary' | 'translation') => void
+  onChangeHighlightColor: (id: string, color: PdfHighlight['color']) => void
   onJump: (page: number) => void
   onMarkdown: () => void
   onJson: () => void
   onClear: () => void
 }
 
-function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onDeleteAiSummary, onJump, onMarkdown, onJson, onClear }: NotesViewProps) {
+function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onDeleteHighlight, onDeleteAiSummary, onHighlightAction, onChangeHighlightColor, onJump, onMarkdown, onJson, onClear }: NotesViewProps) {
   const summaries = paper.aiRegionSummaries ?? []
-  return <div className="section-stack"><section className="content-card"><div className="card-heading"><div><span className="eyebrow">YOUR ANNOTATIONS</span><h2>個人筆記</h2></div></div><textarea className="note-input" value={text} onChange={(event) => setText(event.target.value)} placeholder="記錄疑問、驗證結果或自己的推論；不會覆蓋 AI 原始輸出。" /><div className="note-actions"><select value={verification} onChange={(event) => setVerification(event.target.value as 'checked' | 'pending' | 'concern')}><option value="pending">待查證</option><option value="checked">已查原文</option><option value="concern">有疑慮</option></select><button className="primary-button compact" disabled={!text.trim()} onClick={onAdd}>加入筆記</button></div><div className="notes-list">{paper.notes.map((note) => <article key={note.id}><span className={`note-state ${note.verification}`}>{note.verification === 'checked' ? '已查原文' : note.verification === 'concern' ? '有疑慮' : '待查證'}</span><p>{note.body}</p><button className="danger-link" onClick={() => onDelete(note.id)}>刪除</button></article>)}</div></section><section className="content-card"><div className="card-heading"><div><span className="eyebrow">SOURCE ANNOTATIONS</span><h2>螢光筆、AI 摘要與文字定位</h2></div></div><div className="annotation-summary"><strong>{paper.highlights.length} 個螢光標記</strong><strong>{summaries.length} 個 AI 圈選摘要</strong><strong>{paper.evidence.length} 個來源定位</strong></div><div className="annotation-list"><h3>螢光筆</h3>{paper.highlights.length ? paper.highlights.map((highlight, index) => <article key={highlight.id}><span className={`annotation-color ${highlight.color}`} /><p>{highlight.text || `文字標記 ${index + 1}`}</p><button className="small-button" onClick={() => onJump(highlight.pdfPageIndex)}>PDF p.{highlight.pdfPageIndex + 1}</button></article>) : <p>尚未建立螢光標記。</p>}<h3>AI 圈選摘要</h3>{summaries.length ? summaries.map((summary) => <article key={summary.id}><p>{summary.summary}</p><button className="small-button" onClick={() => onJump(summary.pdfPageIndex)}>PDF p.{summary.pdfPageIndex + 1}</button><button className="danger-link" onClick={() => onDeleteAiSummary(summary.id)}>刪除</button></article>) : <p>尚未建立 AI 圈選摘要。</p>}<h3>文字定位</h3>{paper.evidence.length ? paper.evidence.map((item) => <article key={item.id}><p>{item.quote || item.objectLabel || '未提供摘錄'}</p>{item.pdfPageIndex === null ? <span className="missing-chip">頁碼待確認</span> : <button className="small-button" onClick={() => onJump(item.pdfPageIndex!)}>PDF p.{item.pdfPageIndex + 1}</button>}</article>) : <p>尚未建立來源定位。</p>}</div></section><section className="content-card"><h2>匯出與資料管理</h2><div className="export-grid"><button onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>單篇三遍分析、證據、標記與 AI 摘要</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>會一併刪除瀏覽器內保存的 PDF 原檔</span></button></div><p className="fine-print">所有匯出均排除 API Key 與 PDF 原檔。CSV 匯出會防止試算表公式注入。</p></section></div>
+  const colors: Array<{ id: PdfHighlight['color']; label: string }> = [{ id: 'yellow', label: '黃' }, { id: 'green', label: '綠' }, { id: 'pink', label: '粉紅' }, { id: 'blue', label: '淺藍' }]
+  return <div className="section-stack">
+    <section className="content-card">
+      <div className="card-heading"><div><span className="eyebrow">YOUR ANNOTATIONS</span><h2>個人筆記</h2></div></div>
+      <textarea className="note-input" value={text} onChange={(event) => setText(event.target.value)} placeholder="記錄疑問、驗證結果或自己的推論；不會覆蓋 AI 原始輸出。" />
+      <div className="note-actions"><select value={verification} onChange={(event) => setVerification(event.target.value as 'checked' | 'pending' | 'concern')}><option value="pending">待查證</option><option value="checked">已查原文</option><option value="concern">有疑慮</option></select><button className="primary-button compact" disabled={!text.trim()} onClick={onAdd}>加入筆記</button></div>
+      <div className="notes-list">{paper.notes.map((note) => <article key={note.id}><span className={`note-state ${note.verification}`}>{note.verification === 'checked' ? '已查原文' : note.verification === 'concern' ? '有疑慮' : '待查證'}</span><p>{note.body}</p><button className="danger-link" onClick={() => onDelete(note.id)}>刪除</button></article>)}</div>
+    </section>
+    <section className="content-card">
+      <div className="card-heading"><div><span className="eyebrow">SOURCE ANNOTATIONS</span><h2>螢光筆、AI 摘要與文字定位</h2></div></div>
+      <div className="annotation-summary"><strong>{paper.highlights.length} 個螢光標記</strong><strong>{summaries.length} 個 AI 圈選摘要</strong><strong>{paper.evidence.length} 個來源定位</strong></div>
+      <div className="annotation-list">
+        <h3>螢光筆</h3>
+        {paper.highlights.length ? paper.highlights.map((highlight, index) => <article className="highlight-record" key={highlight.id}>
+          <span className={`annotation-color ${highlight.color}`} />
+          <div className="annotation-copy"><p className="annotation-source">{highlight.text || `文字標記 ${index + 1}`}</p>
+          <div className="annotation-actions">
+            <button className="small-button" onClick={() => onJump(highlight.pdfPageIndex)}>PDF p.{highlight.pdfPageIndex + 1}</button>
+            <div className="annotation-color-picker" aria-label="更換螢光筆顏色">{colors.map((item) => <button key={item.id} className={highlight.color === item.id ? 'active' : ''} title={`${item.label}色`} aria-label={`改成${item.label}色`} style={{ background: item.id === 'yellow' ? '#f6d349' : item.id === 'green' ? '#57be89' : item.id === 'pink' ? '#ea7da0' : '#99ccee' }} onClick={() => onChangeHighlightColor(highlight.id, item.id)} />)}</div>
+            <button className="small-button" disabled={!highlight.text?.trim()} onClick={() => onHighlightAction(highlight.id, 'summary')}>AI摘要</button>
+            <button className="small-button" disabled={!highlight.text?.trim()} onClick={() => onHighlightAction(highlight.id, 'translation')}>翻譯</button>
+            <button className="danger-link" onClick={() => onDeleteHighlight(highlight.id)}>刪除</button>
+          </div>
+            {highlight.aiSummary && <p className="annotation-generated"><strong>AI 摘要：</strong>{highlight.aiSummary}</p>}
+            {highlight.translation && <p className="annotation-generated"><strong>翻譯：</strong>{highlight.translation}</p>}
+          </div>
+        </article>) : <p>尚未建立螢光標記。</p>}
+        <h3>AI 圈選摘要</h3>
+        {summaries.length ? summaries.map((summary) => <article key={summary.id}><p>{summary.summary}</p><button className="small-button" onClick={() => onJump(summary.pdfPageIndex)}>PDF p.{summary.pdfPageIndex + 1}</button><button className="danger-link" onClick={() => onDeleteAiSummary(summary.id)}>刪除</button></article>) : <p>尚未建立 AI 圈選摘要。</p>}
+        <h3>文字定位</h3>
+        {paper.evidence.length ? paper.evidence.map((item) => <article key={item.id}><p>{item.quote || item.objectLabel || '未提供摘錄'}</p>{item.pdfPageIndex === null ? <span className="missing-chip">頁碼待確認</span> : <button className="small-button" onClick={() => onJump(item.pdfPageIndex!)}>PDF p.{item.pdfPageIndex + 1}</button>}</article>) : <p>尚未建立來源定位。</p>}
+      </div>
+    </section>
+    <section className="content-card"><h2>匯出與資料管理</h2><div className="export-grid"><button onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>單篇三遍分析、證據、標記與 AI 摘要</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>會一併刪除瀏覽器內保存的 PDF 原檔</span></button></div><p className="fine-print">所有匯出均排除 API Key 與 PDF 原檔。CSV 匯出會防止試算表公式注入。</p></section>
+  </div>
 }
 
 function EmptyAnalysis({ title, text, action, onRun, disabled }: { title: string; text: string; action?: string; onRun?: () => void; disabled?: boolean }) {

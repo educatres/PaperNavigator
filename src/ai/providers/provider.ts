@@ -212,3 +212,33 @@ export async function analyzeImageRegion(config: ProviderConfig, dataUrl: string
   }, signal)
   return body.choices?.[0]?.message?.content ?? ''
 }
+
+export async function generateText(config: ProviderConfig, prompt: string, signal?: AbortSignal): Promise<{ text: string; usage: AnalysisUsage }> {
+  if (!config.apiKey.trim() || !config.modelId) throw new Error('請先測試連線並選擇模型。')
+  const base = config.baseUrl.replace(/\/$/, '')
+  if (config.id === 'google') {
+    const body = await fetchWithRetry(`${base}/models/${encodeURIComponent(config.modelId)}:generateContent`, {
+      method: 'POST', headers: googleHeaders(config.apiKey),
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 2048 } }),
+    }, signal)
+    const text = googleText(body).trim()
+    if (!text) throw new Error('模型已回應，但沒有可讀取的文字內容。')
+    return { text, usage: usageFromGoogle(body) }
+  }
+  if (config.modelId !== 'gpt-oss:20b') {
+    const body = await fetchWithRetry(`${base}/responses`, {
+      method: 'POST', headers: bearerHeaders(config.apiKey),
+      body: JSON.stringify({ model: config.modelId, instructions: SYSTEM_INSTRUCTIONS, input: prompt, store: false, max_output_tokens: 2048, reasoning: { effort: 'low' } }),
+    }, signal)
+    const text = responsesText(body).trim()
+    if (!text) throw new Error('模型已回應，但沒有可讀取的文字內容。')
+    return { text, usage: usageFromOpenAi(body) }
+  }
+  const body = await fetchWithRetry(`${base}/chat/completions`, {
+    method: 'POST', headers: bearerHeaders(config.apiKey),
+    body: JSON.stringify({ model: config.modelId, messages: [{ role: 'system', content: SYSTEM_INSTRUCTIONS }, { role: 'user', content: prompt }], max_completion_tokens: 2048 }),
+  }, signal)
+  const text = String(body.choices?.[0]?.message?.content ?? '').trim()
+  if (!text) throw new Error('模型已回應，但沒有可讀取的文字內容。')
+  return { text, usage: usageFromOpenAi(body) }
+}

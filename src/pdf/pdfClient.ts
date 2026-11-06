@@ -53,10 +53,10 @@ export async function openPdf(bytes: Uint8Array) {
   return pdfjs.getDocument({ data: bytes.slice() }).promise
 }
 
-export async function renderPdfPage(pdf: PDFDocumentProxy, pageNumber: number, canvas: HTMLCanvasElement, maxWidth: number, textLayer?: HTMLElement) {
+export async function renderPdfPage(pdf: PDFDocumentProxy, pageNumber: number, canvas: HTMLCanvasElement, maxWidth: number, textLayer?: HTMLElement, fixedScale?: number) {
   const page = await pdf.getPage(pageNumber)
   const unscaled = page.getViewport({ scale: 1 })
-  const scale = Math.min(2, Math.max(0.5, maxWidth / unscaled.width))
+  const scale = fixedScale ?? Math.min(2, Math.max(0.5, maxWidth / unscaled.width))
   const viewport = page.getViewport({ scale })
   const ratio = window.devicePixelRatio || 1
   canvas.width = Math.floor(viewport.width * ratio)

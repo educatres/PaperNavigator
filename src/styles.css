@@ -302,13 +302,19 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 
 .pdf-panel { display: flex; flex-direction: column; min-width: 0; background: #d7d4cd; }
 .pdf-toolbar { min-height: 49px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; color: #dfe5e3; background: #263942; }
+.pdf-toolbar .toolbar-actions { flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
 .pdf-toolbar > div:first-child { display: flex; flex-direction: column; }
 .pdf-toolbar strong { font-size: 11px; }
 .pdf-toolbar span { color: #98a9aa; font: 9px 'DM Mono', monospace; }
 .pdf-toolbar .icon-button, .pdf-toolbar .small-button { color: #d7dfde; border-color: #53656c; background: #31474f; }
 .pdf-viewport { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 14px; text-align: center; }
+.pdf-loading { padding: 28px; color: #657376; font-size: 11px; }
 .pdf-viewport.mode-highlight, .pdf-viewport.mode-highlight .pdf-text-layer span { cursor: default; }
 .pdf-viewport.mode-roi { cursor: crosshair; }
+.pdf-document-stage { display: grid; justify-items: center; gap: 18px; min-width: 100%; }
+.pdf-page-shell { position: relative; display: inline-block; max-width: none; padding: 18px 12px 12px; background: rgba(255,255,255,.16); }
+.pdf-page-label { position: absolute; top: 3px; left: 12px; color: #657376; font: 9px 'DM Mono', monospace; }
+.pdf-page-content { position: relative; line-height: 0; }
 .pdf-canvas-stage { position: relative; display: inline-block; line-height: 0; }
 .pdf-viewport.mode-roi .pdf-canvas-stage { touch-action: none; }
 .pdf-viewport canvas { display: block; margin: 0 auto; background: #fff; box-shadow: 0 4px 18px rgba(21,31,34,.2); }
@@ -325,6 +331,7 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-annotation-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border-top: 1px solid #bbb8b1; background: #fff8d9; }
 .pdf-annotation-actions p { margin: 0; color: #675e3b; font-size: 9px; }
 .pdf-annotation-actions.erase-hint { background: #f8e8e3; }
+.roi-page-actions { position: absolute; right: 10px; bottom: 10px; z-index: 7; max-width: 280px; padding: 7px; background: rgba(238,236,230,.95); box-shadow: 0 4px 12px rgba(21,31,34,.18); }
 .pdf-viewport.mode-erase,
 .pdf-viewport.mode-erase .pdf-text-layer,
 .pdf-viewport.mode-erase .pdf-text-layer span,
@@ -337,6 +344,16 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .roi-actions { padding: 10px; border-top: 1px solid #bbb8b1; background: #eeece6; }
 .roi-actions p { margin: 0 0 7px; color: #657376; font-size: 9px; }
 .roi-result { max-height: 150px; overflow-y: auto; margin-top: 8px; padding: 9px; background: #fff; color: #42545b; font-size: 10px; line-height: 1.6; white-space: pre-wrap; }
+.highlight-record { grid-template-columns: auto 1fr; align-items: start; }
+.annotation-copy { min-width: 0; }
+.annotation-copy p { line-height: 1.55; }
+.annotation-source { font-weight: 600; }
+.annotation-generated { margin-top: 7px !important; padding: 7px 8px; background: #fff; color: #526166; }
+.annotation-generated strong { color: #347d75; }
+.annotation-actions { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.annotation-color-picker { display: flex; gap: 3px; }
+.annotation-color-picker button { width: 17px; height: 17px; padding: 0; border: 1px solid rgba(51,62,65,.25); border-radius: 50%; cursor: pointer; }
+.annotation-color-picker button.active { border: 2px solid var(--ink); box-shadow: 0 0 0 1px #fff; }
 .inline-error { padding: 10px; color: #8c3e2e; background: #f9e6df; }
 .empty-viewer { display: grid; place-items: center; color: #7a8484; text-align: center; }
 .empty-viewer .empty-icon { font-size: 45px; }
@@ -384,6 +401,10 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
   .welcome { padding: 50px 18px; }
   .welcome-steps { grid-template-columns: 1fr; }
   .reference-list article { grid-template-columns: 1fr; }
+  .pdf-toolbar { align-items: stretch; flex-direction: column; }
+  .pdf-toolbar .toolbar-actions { justify-content: flex-start; }
+  .annotation-list article.highlight-record { grid-template-columns: auto 1fr; }
+  .annotation-list article.highlight-record .annotation-actions { grid-column: 2; }
   .usage-text { display: none; }
   .busy-overlay { padding: 16px; }
   .busy-overlay-card { padding: 30px 20px 24px; }

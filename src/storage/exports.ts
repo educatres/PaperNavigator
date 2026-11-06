@@ -68,7 +68,7 @@ ${pass3?.researchIdeas.map((item) => `- **${item.question}**\n  - 假設：${ite
 
 ## 螢光標記與文字定位
 
-${paper.highlights.map((item, index) => `- 螢光標記 ${index + 1}（${item.color}）：PDF p.${item.pdfPageIndex + 1}${item.text ? `「${item.text}」` : ''}`).join('\n') || '無螢光標記'}
+${paper.highlights.map((item, index) => `- 螢光標記 ${index + 1}（${item.color}）：PDF p.${item.pdfPageIndex + 1}${item.text ? `「${item.text}」` : ''}${item.aiSummary ? `\n  - AI 摘要：${item.aiSummary}` : ''}${item.translation ? `\n  - 翻譯：${item.translation}` : ''}`).join('\n') || '無螢光標記'}
 
 ${paper.evidence.map((item) => `- PDF p.${item.pdfPageDisplay ?? '?'}［${item.verificationStatus}］：${item.quote ?? item.objectLabel ?? '未提供摘錄'}`).join('\n') || '無來源定位'}
 
