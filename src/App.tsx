@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { PdfViewer } from './components/pdf/PdfViewer'
-import type { AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, PdfParagraphTranslation, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
+import type { AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, PdfParagraphTranslation, PdfScreenshot, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
 import { analyzePass1, analyzePass2, analyzePass3 } from './ai/orchestrator/analysis'
 import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
@@ -13,7 +13,7 @@ import { exportPaperMarkdown, exportPass3Html, exportProjectJson, importProjectJ
 import { markdownToHtml, richTextToHtml } from './lib/richText'
 import { clearAllSettings, readActiveProvider, readProviderConfig, saveProviderConfig } from './storage/apiKeyStore'
 
-type TabId = 'overview' | 'pass1' | 'pass2' | 'pass3' | 'notes'
+type TabId = 'overview' | 'pass1' | 'pass2' | 'pass3' | 'notes' | 'screenshots'
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'overview', label: '總覽' },
@@ -125,6 +125,10 @@ export default function App() {
       return Number.isFinite(saved) && saved >= 330 ? saved : null
     } catch { return null }
   })
+  const [pdfPanelCollapsed, setPdfPanelCollapsed] = useState(() => {
+    try { return window.localStorage.getItem('papernavigator.pdf-panel-collapsed') === 'yes' }
+    catch { return false }
+  })
   const [headerVisible, setHeaderVisible] = useState(() => {
     try { return window.localStorage.getItem('papernavigator.header-hidden') !== 'yes' }
     catch { return true }
@@ -193,6 +197,11 @@ export default function App() {
       else window.localStorage.setItem('papernavigator.pdf-panel-width', String(pdfPanelWidth))
     } catch { /* The adjustable columns still work when browser storage is unavailable. */ }
   }, [pdfPanelWidth])
+
+  useEffect(() => {
+    try { window.localStorage.setItem('papernavigator.pdf-panel-collapsed', pdfPanelCollapsed ? 'yes' : 'no') }
+    catch { /* The PDF panel still works when browser storage is unavailable. */ }
+  }, [pdfPanelCollapsed])
 
   useEffect(() => {
     if (!exportsOpen) return
@@ -264,7 +273,7 @@ export default function App() {
           id, projectId: bundle.project.id, sha256: data.sha256, filename: data.filename,
           title: data.title, authors: data.author ? data.author.split(/[,;]/).map((item) => item.trim()).filter(Boolean) : [],
           year: null, doi: null, pageCount: data.pageCount, size: data.size, uploadTime: now,
-          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], floatingNote: '', highlights: [], pdfTranslations: [],
+          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], floatingNote: '', highlights: [], screenshots: [], pdfTranslations: [],
         })
       }
       if (nextPapers.length) {
@@ -461,10 +470,21 @@ export default function App() {
     updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((item) => item.id === highlightId ? { ...item, color } : item) }))
   }
 
+  const showPdfPage = (page: number) => {
+    setPageIndex(page)
+    setPdfPanelCollapsed(false)
+  }
+
+  const addScreenshot = (screenshot: PdfScreenshot) => {
+    if (!selectedPaper) return
+    updatePaper(selectedPaper.id, (paper) => ({ ...paper, screenshots: [...(paper.screenshots ?? []), screenshot] }))
+    setMessage(`已保存 PDF p.${screenshot.pdfPageIndex + 1} 的圈選截圖。`)
+  }
+
   const jumpToEvidence = (evidenceId: string) => {
     const evidence = selectedPaper?.evidence.find((item) => item.id === evidenceId)
     if (!evidence || evidence.pdfPageIndex === null) { setMessage('此來源沒有可跳轉的 PDF 頁碼。'); return }
-    setPageIndex(evidence.pdfPageIndex)
+    showPdfPage(evidence.pdfPageIndex)
     setMessage(evidence.verificationStatus === 'matched' ? '已跳至核對頁面。' : '已跳至 AI 指定頁面，但摘錄尚未核對。')
   }
 
@@ -597,7 +617,7 @@ export default function App() {
     {busy && <BusyOverlay message={busy} onCancel={abortRef.current ? () => abortRef.current?.abort() : undefined} />}
     {exportsOpen && <ExportDialog canExportMarkdown={Boolean(selectedPaper)} onMarkdown={() => selectedPaper && exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={clearProject} onClose={() => setExportsOpen(false)} />}
 
-    <main className="workspace-layout" style={workspaceStyle}>
+    <main className={`workspace-layout${pdfPanelCollapsed ? ' pdf-collapsed' : ''}`} style={workspaceStyle}>
       <aside className="library-panel">
         <div className="library-heading"><span>論文書架</span><span>{bundle.papers.length} / 10</span><button className="library-toggle" onClick={() => setLibraryCollapsed((value) => !value)} aria-label={libraryCollapsed ? '展開論文書架' : '收起論文書架'} title={libraryCollapsed ? '展開論文書架' : '收起論文書架'}>{libraryCollapsed ? '»' : '«'}</button></div>
         <div className="paper-list">
@@ -618,29 +638,32 @@ export default function App() {
       </aside>
 
       <section className="content-panel">
-        <nav className="tabbar" aria-label="閱讀階段"><button className={floatingNoteOpen ? 'note-trigger active' : 'note-trigger'} disabled={!selectedPaper} onClick={() => setFloatingNoteOpen((value) => !value)} aria-pressed={floatingNoteOpen}>筆記</button><button className={tab === 'notes' ? 'highlight-trigger active' : 'highlight-trigger'} disabled={!selectedPaper} onClick={() => setTab('notes')}><span aria-hidden="true">★</span>重點標記</button>{TABS.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}</button>)}<button className="full-report-trigger" disabled={!canExportFullReport} title={canExportFullReport ? '在新分頁開啟包含三遍分析與證據附錄的 A4 報告' : '完成三遍閱讀後即可開啟'} onClick={() => { if (selectedPaper && !openFullReportHtml(selectedPaper)) setError('瀏覽器阻擋了新分頁，請允許此網站開啟彈出式視窗。') }}>完整報告</button></nav>
+        <nav className="tabbar" aria-label="閱讀階段"><button className={floatingNoteOpen ? 'note-trigger active' : 'note-trigger'} disabled={!selectedPaper} onClick={() => setFloatingNoteOpen((value) => !value)} aria-pressed={floatingNoteOpen}>筆記</button><button className={tab === 'notes' ? 'highlight-trigger active' : 'highlight-trigger'} disabled={!selectedPaper} onClick={() => setTab('notes')}><span aria-hidden="true">★</span>重點標記</button><button className={tab === 'screenshots' ? 'screenshot-trigger active' : 'screenshot-trigger'} disabled={!selectedPaper} onClick={() => setTab('screenshots')}><span aria-hidden="true">▣</span>截圖</button>{TABS.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}</button>)}<button className="full-report-trigger" disabled={!canExportFullReport} title={canExportFullReport ? '在新分頁開啟包含三遍分析與證據附錄的 A4 報告' : '完成三遍閱讀後即可開啟'} onClick={() => { if (selectedPaper && !openFullReportHtml(selectedPaper)) setError('瀏覽器阻擋了新分頁，請允許此網站開啟彈出式視窗。') }}>完整報告</button></nav>
         {!selectedPaper ? <Welcome onUpload={() => fileRef.current?.click()} /> : <div className="content-scroll">
           {tab === 'overview' && <div className="paper-title-row"><div><span className="eyebrow">{selectedPaper.filename}</span><h1>{selectedPaper.title ?? '尚未擷取論文標題'}</h1><p>{selectedPaper.authors.join('、') || '作者未報告'}{selectedPaper.year ? ` · ${selectedPaper.year}` : ''}</p></div><div className="paper-actions"><button className="small-button" onClick={() => exportPaperMarkdown(selectedPaper)}>匯出報告</button><button className="danger-link" onClick={() => removePaper(selectedPaper)}>刪除</button></div></div>}
           {!selectedDocument && <div className="reattach-banner"><div><strong>找不到已保存的原始 PDF</strong><p>可能是瀏覽器儲存空間已被清除。請選擇同一檔案，系統會用 SHA-256 核對並重新保存。</p></div><button className="secondary-button" onClick={() => reattachRef.current?.click()}>重新附檔</button><input ref={reattachRef} hidden type="file" accept="application/pdf,.pdf" onChange={(event) => void reattach(event.target.files?.[0])} /></div>}
-          {tab === 'overview' && <Overview paper={selectedPaper} document={selectedDocument} onPass1={runPass1} onPass2={runPass2} onPass3={runPass3} onJump={(page) => setPageIndex(page)} />}
+          {tab === 'overview' && <Overview paper={selectedPaper} document={selectedDocument} onPass1={runPass1} onPass2={runPass2} onPass3={runPass3} onJump={showPdfPage} />}
           {tab === 'pass1' && <Pass1View paper={selectedPaper} onRun={runPass1} onEvidence={jumpToEvidence} />}
-          {tab === 'pass2' && <Pass2View paper={selectedPaper} onRun={runPass2} onEvidence={jumpToEvidence} onJump={(page) => page !== null && setPageIndex(page)} />}
+          {tab === 'pass2' && <Pass2View paper={selectedPaper} onRun={runPass2} onEvidence={jumpToEvidence} onJump={(page) => page !== null && showPdfPage(page)} />}
           {tab === 'pass3' && <Pass3View paper={selectedPaper} onClear={() => updatePaper(selectedPaper.id, (paper) => ({ ...paper, pass3: undefined, pass3Text: undefined }))} />}
-          {tab === 'notes' && <NotesView paper={selectedPaper} onDeleteHighlight={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))} onDeleteHighlightOutput={(id: string, output: 'aiSummary' | 'translation') => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((highlight) => highlight.id === id ? { ...highlight, [output]: undefined } : highlight) }))} onHighlightAction={runHighlightTextAction} onChangeHighlightColor={updateHighlightColor} onJump={setPageIndex} />}
+          {tab === 'notes' && <NotesView paper={selectedPaper} onDeleteHighlight={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))} onDeleteHighlightOutput={(id: string, output: 'aiSummary' | 'translation') => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((highlight) => highlight.id === id ? { ...highlight, [output]: undefined } : highlight) }))} onHighlightAction={runHighlightTextAction} onChangeHighlightColor={updateHighlightColor} onJump={showPdfPage} />}
+          {tab === 'screenshots' && <ScreenshotsView screenshots={selectedPaper.screenshots ?? []} onJump={showPdfPage} onDelete={(id) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, screenshots: (paper.screenshots ?? []).filter((screenshot) => screenshot.id !== id) }))} />}
         </div>}
       </section>
-      <div className="panel-resizer" role="separator" aria-label="調整閱讀內容與 PDF 欄寬" aria-orientation="vertical" tabIndex={0} onPointerDown={beginPdfResize} onKeyDown={resizePdfWithKeyboard} onDoubleClick={() => setPdfPanelWidth(null)} />
-      <PdfViewer
+      {!pdfPanelCollapsed && <div className="panel-resizer" role="separator" aria-label="調整閱讀內容與 PDF 欄寬" aria-orientation="vertical" tabIndex={0} onPointerDown={beginPdfResize} onKeyDown={resizePdfWithKeyboard} onDoubleClick={() => setPdfPanelWidth(null)} />}
+      {pdfPanelCollapsed ? <button className="pdf-panel-restore" onClick={() => setPdfPanelCollapsed(false)} aria-label="展開 PDF Viewer" title="展開 PDF Viewer"><span aria-hidden="true">«</span><strong>PDF</strong></button> : <PdfViewer
         document={selectedDocument}
         paperId={selectedPaper?.id ?? ''}
         pageIndex={pageIndex}
         highlights={selectedPaper?.highlights ?? []}
         translations={selectedPaper?.pdfTranslations ?? []}
         onTranslate={translatePdfParagraphs}
+        onCollapse={() => setPdfPanelCollapsed(true)}
         onPageChange={setPageIndex}
         onAddHighlight={(highlight: PdfHighlight) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: [...paper.highlights, highlight] }))}
         onDeleteHighlight={(id: string) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))}
-      />
+        onAddScreenshot={addScreenshot}
+      />}
     </main>
     {selectedPaper && floatingNoteOpen && <FloatingNote value={selectedPaper.floatingNote ?? ''} onChange={(value) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, floatingNote: value }))} onClose={() => setFloatingNoteOpen(false)} />}
   </div>
@@ -773,6 +796,19 @@ function NotesView({ paper, onDeleteHighlight, onDeleteHighlightOutput, onHighli
           </div>
         </article>) : <p>尚未建立螢光標記。</p>}
       </div>
+    </section>
+  </div>
+}
+
+function ScreenshotsView({ screenshots, onJump, onDelete }: { screenshots: PdfScreenshot[]; onJump: (page: number) => void; onDelete: (id: string) => void }) {
+  return <div className="section-stack">
+    <section className="content-card">
+      <div className="card-heading"><h2>截圖</h2></div>
+      <div className="annotation-summary"><strong>{screenshots.length} 張 PDF 截圖</strong><span>使用 PDF Viewer 的「圈選截圖」工具新增</span></div>
+      {screenshots.length ? <div className="screenshot-grid">{screenshots.map((screenshot, index) => <figure key={screenshot.id} className="screenshot-card">
+        <img src={screenshot.dataUrl} alt={`PDF 第 ${screenshot.pdfPageIndex + 1} 頁截圖 ${index + 1}`} />
+        <figcaption><span>截圖 {index + 1} · PDF p.{screenshot.pdfPageIndex + 1}</span><div><button className="small-button" onClick={() => onJump(screenshot.pdfPageIndex)}>頁面定位</button><button className="danger-link" onClick={() => onDelete(screenshot.id)}>刪除</button></div></figcaption>
+      </figure>)}</div> : <p>尚未建立截圖。請在 PDF Viewer 選擇「圈選截圖」，再於頁面拖曳範圍。</p>}
     </section>
   </div>
 }

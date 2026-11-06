@@ -40,6 +40,18 @@ export interface PdfParagraphTranslation {
   createdAt: string
 }
 
+export interface PdfScreenshot {
+  id: string
+  paperId: string
+  pdfPageIndex: number
+  x: number
+  y: number
+  width: number
+  height: number
+  dataUrl: string
+  createdAt: string
+}
+
 /** @deprecated Retained only so older project backups can still be imported. */
 export interface AiRegionSummary {
   id: string
@@ -138,6 +150,7 @@ export interface Paper {
   notes: UserNote[]
   floatingNote?: string
   highlights: PdfHighlight[]
+  screenshots?: PdfScreenshot[]
   pdfTranslations?: PdfParagraphTranslation[]
   /** @deprecated Legacy import compatibility; no longer shown or created. */
   aiRegionSummaries?: AiRegionSummary[]

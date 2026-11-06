@@ -39,6 +39,8 @@ export function migrateBundle(value: ProjectBundle): ProjectBundle {
       notes: paper.notes ?? [],
       floatingNote: paper.floatingNote ?? '',
       highlights: paper.highlights ?? [],
+      screenshots: (paper.screenshots ?? []).filter((item) => /^data:image\/(?:png|jpeg|webp);base64,[a-z0-9+/]+=*$/i.test(item.dataUrl)
+        && [item.x, item.y, item.width, item.height].every(Number.isFinite)),
       pdfTranslations: paper.pdfTranslations ?? [],
       aiRegionSummaries: paper.aiRegionSummaries ?? [],
     })),

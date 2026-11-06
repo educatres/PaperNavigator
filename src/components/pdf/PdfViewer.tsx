@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import type { PdfDocumentData, PdfHighlight, PdfHighlightColor, PdfHighlightRect, PdfParagraphTranslation } from '../../domain/types'
+import type { PdfDocumentData, PdfHighlight, PdfHighlightColor, PdfHighlightRect, PdfParagraphTranslation, PdfScreenshot } from '../../domain/types'
 import { openPdf, renderPdfPage } from '../../pdf/pdfClient'
+import { captureCanvasSelection, normalizedSelectionRect, type DragPoint } from '../../pdf/pdfScreenshot'
 
 interface Props {
   document: PdfDocumentData | null
@@ -10,12 +11,14 @@ interface Props {
   highlights: PdfHighlight[]
   translations: PdfParagraphTranslation[]
   onTranslate: () => void
+  onCollapse: () => void
   onPageChange: (pageIndex: number) => void
   onAddHighlight: (highlight: PdfHighlight) => void
   onDeleteHighlight: (id: string) => void
+  onAddScreenshot: (screenshot: PdfScreenshot) => void
 }
 
-type PdfTool = 'browse' | 'pan' | 'highlight' | 'erase'
+type PdfTool = 'browse' | 'pan' | 'highlight' | 'erase' | 'screenshot'
 type Zoom = 'fit' | number
 
 const highlightColors: Record<PdfHighlightColor, string> = {
@@ -111,7 +114,7 @@ function selectionElement(node: Node | null) {
   return element?.closest('span') ?? element
 }
 
-export function PdfViewer({ document, paperId, pageIndex, highlights, translations, onTranslate, onPageChange, onAddHighlight, onDeleteHighlight }: Props) {
+export function PdfViewer({ document, paperId, pageIndex, highlights, translations, onTranslate, onCollapse, onPageChange, onAddHighlight, onDeleteHighlight, onAddScreenshot }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const pageNodes = useRef<Record<number, HTMLDivElement | null>>({})
   const visiblePage = useRef(pageIndex)
@@ -199,7 +202,7 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
     setIsPanning(false)
   }
 
-  if (!document) return <aside className="pdf-panel empty-viewer"><div><span className="empty-icon">⌁</span><h2>原文檢視器</h2><p>選取論文後可連續檢視與建立文字標記。</p></div></aside>
+  if (!document) return <aside className="pdf-panel empty-viewer"><button className="pdf-empty-collapse" onClick={onCollapse} aria-label="收合 PDF Viewer" title="收合 PDF Viewer">»</button><div><span className="empty-icon">⌁</span><h2>原文檢視器</h2><p>選取論文後可連續檢視、圈選截圖與建立文字標記。</p></div></aside>
 
   const pageCount = pdf?.numPages ?? document.pageCount
   const zoomLabel = zoom === 'fit' ? '同寬' : `${Math.round(zoom * 100)}%`
@@ -219,7 +222,9 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
         <button className={tool === 'highlight' ? 'small-button active' : 'small-button'} onClick={() => switchTool('highlight')} aria-pressed={tool === 'highlight'} title="選取 PDF 文字並建立螢光標記"><span className="tool-icon" aria-hidden="true">🖍</span>螢光筆</button>
         <div className="highlight-toolbar-palette" aria-label="螢光筆顏色">{(Object.keys(highlightColors) as PdfHighlightColor[]).map((item) => <button key={item} aria-label={`${colorLabels[item]}色螢光筆`} title={`${colorLabels[item]}色`} className={color === item ? 'active' : ''} style={{ background: highlightColors[item] }} onClick={() => setColor(item)} />)}</div>
         <button className={tool === 'erase' ? 'small-button active' : 'small-button'} onClick={() => switchTool('erase')} aria-pressed={tool === 'erase'} title="點選頁面上的螢光標記即可刪除"><span className="tool-icon" aria-hidden="true">⌫</span>刪除標記</button>
+        <button className={tool === 'screenshot' ? 'small-button active' : 'small-button'} onClick={() => switchTool('screenshot')} aria-pressed={tool === 'screenshot'} title="在 PDF 頁面拖曳範圍並保存截圖"><span className="tool-icon" aria-hidden="true">▣</span>圈選截圖</button>
         <button className="small-button pdf-translate-button" onClick={onTranslate} title="擷取 PDF 段落並逐段翻譯成繁體中文"><span className="tool-icon" aria-hidden="true">文</span>{translations.length ? '更新翻譯' : '逐段翻譯'}</button>
+        <button className="small-button pdf-collapse-button" onClick={onCollapse} aria-label="收合 PDF Viewer" title="收合 PDF Viewer"><span aria-hidden="true">»</span>收合</button>
       </div>
     </div>
     <div className={`pdf-viewport mode-${tool}${isPanning ? ' panning' : ''}`} ref={viewportRef} onScroll={handleScroll} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
@@ -245,11 +250,13 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
             zoom={zoom}
             onAddHighlight={onAddHighlight}
             onDeleteHighlight={onDeleteHighlight}
+            onAddScreenshot={onAddScreenshot}
           />
         </div>)}
       </div>}
     </div>
     {tool === 'erase' && <div className="pdf-annotation-actions erase-hint"><p>點選頁面上的螢光標記即可刪除，不會影響分析或筆記。</p></div>}
+    {tool === 'screenshot' && <div className="pdf-annotation-actions screenshot-hint"><p>在單一 PDF 頁面按住滑鼠左鍵拖曳；放開後，圈選區域會保存到「截圖」分頁。</p></div>}
   </aside>
 }
 
@@ -265,12 +272,15 @@ interface PdfPageProps {
   zoom: Zoom
   onAddHighlight: (highlight: PdfHighlight) => void
   onDeleteHighlight: (id: string) => void
+  onAddScreenshot: (screenshot: PdfScreenshot) => void
 }
 
-function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, color, viewportWidth, zoom, onAddHighlight, onDeleteHighlight }: PdfPageProps) {
+function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, color, viewportWidth, zoom, onAddHighlight, onDeleteHighlight, onAddScreenshot }: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const textLayerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState('')
+  const screenshotStart = useRef<DragPoint | null>(null)
+  const [screenshotSelection, setScreenshotSelection] = useState<PdfHighlightRect | null>(null)
 
   useEffect(() => {
     if (!canvasRef.current) return
@@ -346,8 +356,50 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
     current.removeAllRanges()
   }
 
+  const screenshotPoint = (event: React.PointerEvent<HTMLDivElement>) => {
+    const stage = event.currentTarget.getBoundingClientRect()
+    return { point: { x: event.clientX - stage.left, y: event.clientY - stage.top }, stage }
+  }
+  const beginScreenshot = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (tool !== 'screenshot' || event.button !== 0) return
+    const { point } = screenshotPoint(event)
+    screenshotStart.current = point
+    setScreenshotSelection(null)
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+  const moveScreenshot = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (tool !== 'screenshot' || !screenshotStart.current) return
+    const { point, stage } = screenshotPoint(event)
+    setScreenshotSelection(normalizedSelectionRect(screenshotStart.current, point, stage.width, stage.height, 1))
+    event.preventDefault()
+  }
+  const finishScreenshot = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (tool !== 'screenshot' || !screenshotStart.current || !canvasRef.current) return
+    const { point, stage } = screenshotPoint(event)
+    const rect = normalizedSelectionRect(screenshotStart.current, point, stage.width, stage.height)
+    screenshotStart.current = null
+    setScreenshotSelection(null)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (!rect) return
+    try {
+      onAddScreenshot({
+        id: crypto.randomUUID(), paperId, pdfPageIndex: pageIndex,
+        ...rect, dataUrl: captureCanvasSelection(canvasRef.current, rect), createdAt: new Date().toISOString(),
+      })
+    } catch (error) {
+      setRenderError(error instanceof Error ? error.message : String(error))
+    }
+    event.preventDefault()
+  }
+  const cancelScreenshot = (event: React.PointerEvent<HTMLDivElement>) => {
+    screenshotStart.current = null
+    setScreenshotSelection(null)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+  }
+
   return <div className="pdf-page-content">
-    <div className="pdf-canvas-stage" onPointerUp={highlightSelection}>
+    <div className="pdf-canvas-stage" onPointerDown={beginScreenshot} onPointerMove={moveScreenshot} onPointerUp={(event) => { finishScreenshot(event); highlightSelection() }} onPointerCancel={cancelScreenshot}>
       <canvas ref={canvasRef} />
       <div ref={textLayerRef} className="pdf-text-layer" aria-label={`PDF 第 ${pageIndex + 1} 頁文字層`} />
       {highlights.flatMap((highlight) => pageRects(highlight).map((rect, index) => <button
@@ -374,6 +426,7 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
           </div>
         </div>
       })}
+      {screenshotSelection && <div className="pdf-screenshot-selection" aria-hidden="true" style={{ left: `${screenshotSelection.x * 100}%`, top: `${screenshotSelection.y * 100}%`, width: `${screenshotSelection.width * 100}%`, height: `${screenshotSelection.height * 100}%` }} />}
     </div>
     {renderError && <p className="inline-error">{renderError}</p>}
   </div>

@@ -4,7 +4,7 @@
 
 ```text
 React UI
-  ├─ PDF Viewer / continuous pages / zoom / text selection / persistent highlights / paragraph translation popovers
+  ├─ PDF Viewer / continuous pages / zoom / collapsible panel / text selection / persistent highlights / crop screenshots / translation popovers
   ├─ Reading passes / Compare
   └─ Floating note / Highlights / Citation / Export
           ↓
@@ -33,7 +33,8 @@ UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，�
 5. PDF 檢視器連續渲染所有頁面，捲動時更新目前頁碼；同次文字選取只保存一筆螢光記錄與第一個版面區塊。
 6. 第三遍只使用第一遍、第二遍、浮動純文字筆記與螢光重點，不重新傳送 PDF 全文；使用者可隨筆記或標記更新再次執行。
 7. PDF Viewer 的逐段翻譯先由 PDF.js 依頁面、欄位與行距重建段落，再逐筆傳送段落文字；譯文與正規化行座標會立即保存，hover 浮窗固定顯示在原文上方。
-8. 比較工作台只使用已保存的 observations；篩選不觸發 AI。
+8. 圈選截圖只裁切目前已渲染的 PDF canvas，不經 AI；以 WebP（不支援時 PNG）data URL 與正規化來源座標保存，並可隨專案備份及完整報告移動。
+9. 比較工作台只使用已保存的 observations；篩選不觸發 AI。
 
 ## Provider 差異
 
@@ -41,4 +42,4 @@ Google 模式保留 PDF 的視覺、版面與圖表資訊，使用原生 `genera
 
 ## 快取與檔案生命週期
 
-`ProjectBundle` 保存分析、正規化頁面座標的螢光標記與逐段翻譯，不內嵌 `File`、PDF bytes 或 API Key。PDF 原檔另存於 IndexedDB `pdfs` object store，重新載入時以 paper ID 自動恢復；若網站資料被清除，仍可用 SHA-256 相符的原檔重新綁定。API Key 與 Provider、Base URL、模型則保存在 localStorage，與 ProjectBundle、匯出及 repository 隔離。
+`ProjectBundle` 保存分析、正規化頁面座標的螢光標記、截圖與逐段翻譯，不內嵌 `File`、PDF bytes 或 API Key。PDF 原檔另存於 IndexedDB `pdfs` object store，重新載入時以 paper ID 自動恢復；若網站資料被清除，仍可用 SHA-256 相符的原檔重新綁定。API Key 與 Provider、Base URL、模型則保存在 localStorage，與 ProjectBundle、匯出及 repository 隔離。

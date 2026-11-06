@@ -95,19 +95,39 @@ describe('A4 full report HTML export', () => {
   })
 
   it('combines all three passes, evidence, safe markup, and A4 print styles', () => {
-    const html = fullReportHtmlDocument(completePaper())
+    const paper = completePaper()
+    paper.floatingNote = '我的筆記\n第二行'
+    paper.highlights = [{ id: 'h1', paperId: 'p', pdfPageIndex: 2, x: .1, y: .2, width: .3, height: .04, color: 'yellow', text: 'Highlighted <source>', aiSummary: 'AI <summary>', translation: '中文翻譯', createdAt: '' }]
+    paper.screenshots = [{ id: 's1', paperId: 'p', pdfPageIndex: 3, x: .1, y: .1, width: .5, height: .4, dataUrl: 'data:image/png;base64,AA==', createdAt: '' }]
+    const html = fullReportHtmlDocument(paper)
 
     expect(html).toContain('@page{size:A4')
     expect(html).toContain('第一遍：鳥瞰')
     expect(html).toContain('第二遍：理解')
     expect(html).toContain('第三遍：重建與批判')
     expect(html).toContain('證據附錄')
+    expect(html).toContain('個人閱讀附錄')
+    expect(html).toContain('Highlighted &lt;source&gt;')
+    expect(html).toContain('AI &lt;summary&gt;')
+    expect(html).toContain('中文翻譯')
+    expect(html).toContain('data:image/png;base64,AA==')
+    expect(html).toContain('我的筆記<br>第二行')
+    expect(html.indexOf('個人閱讀附錄')).toBeGreaterThan(html.indexOf('證據附錄'))
     expect(html).toContain('href="#evidence-1"')
     expect(html).toContain('Evidence &lt;quoted&gt;')
     expect(html).toContain('<h2>Reconstruction</h2>')
     expect(html).not.toContain('onclick')
     expect(html).not.toContain('<script>')
     expect(html).toContain('Paper &lt;One&gt;')
+  })
+
+  it('does not embed an unsafe screenshot URL in the report', () => {
+    const paper = completePaper()
+    paper.screenshots = [{ id: 's1', paperId: 'p', pdfPageIndex: 0, x: 0, y: 0, width: 1, height: 1, dataUrl: 'javascript:alert(1)', createdAt: '' }]
+
+    const html = fullReportHtmlDocument(paper)
+    expect(html).not.toContain('javascript:')
+    expect(html).toContain('沒有截圖')
   })
 
   it('rejects export before the third pass is complete', () => {
