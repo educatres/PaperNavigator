@@ -115,6 +115,8 @@ export interface Paper {
   pass1?: Pass1Result
   pass2?: Pass2Result
   pass3?: Pass3Result
+  /** Plain-text output from the current third reading pass. */
+  pass3Text?: string
   tableAnalyses: TableAnalysis[]
   citations: CitationRecord[]
   evidence: SourceEvidence[]

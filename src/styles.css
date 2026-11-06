@@ -279,6 +279,7 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .notes-list { display: grid; gap: 7px; margin-top: 15px; }
 .notes-list article { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 11px; background: #f7f5ef; }
 .notes-list p { margin: 0; }
+.pass3-text-output { margin: 0; padding: 18px; white-space: pre-wrap; overflow-wrap: anywhere; background: #f7f5ef; color: #293537; font: 14px/1.8 'Noto Serif TC', Georgia, serif; }
 .annotation-summary { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
 .annotation-summary strong { padding: 6px 8px; color: #536368; background: #f1f0eb; font: 9px 'DM Mono', monospace; }
 .annotation-list { display: grid; gap: 7px; }

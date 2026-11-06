@@ -60,11 +60,11 @@ ${pass2?.claims.map((item) => `- ${item.claim}\n  - 支持：${item.support}\n  
 
 ## 第三遍
 
-${pass3?.reconstruction.map((item) => `- **${item.step}** [${item.status}]：${item.detail}`).join('\n') ?? '尚未分析'}
+${paper.pass3Text?.trim() || pass3?.reconstruction.map((item) => `- **${item.step}** [${item.status}]：${item.detail}`).join('\n') || '尚未分析'}
 
 ### AI 建議的研究題目
 
-${pass3?.researchIdeas.map((item) => `- **${item.question}**\n  - 假設：${item.hypothesis}\n  - 最小實驗：${item.minimumExperiment}`).join('\n') ?? '尚未分析'}
+${paper.pass3Text?.trim() ? '（第三遍已以純文字報告輸出；以上內容即為完整報告。）' : pass3?.researchIdeas.map((item) => `- **${item.question}**\n  - 假設：${item.hypothesis}\n  - 最小實驗：${item.minimumExperiment}`).join('\n') || '尚未分析'}
 
 ## 螢光標記與文字定位
 
@@ -84,6 +84,10 @@ ${paper.notes.map((note) => `- [${note.verification}] ${note.body}`).join('\n') 
 
 export function exportPaperMarkdown(paper: Paper) {
   download(`${safeName(paper.title ?? paper.filename)}.md`, paperMarkdown(paper), 'text/markdown;charset=utf-8')
+}
+
+export function exportPass3Text(paper: Paper, text = paper.pass3Text ?? '') {
+  download(`${safeName(paper.title ?? paper.filename)}-第三遍.txt`, text, 'text/plain;charset=utf-8')
 }
 
 function csvSafe(value: unknown) {
