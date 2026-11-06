@@ -130,14 +130,3 @@ export function verifyEvidence(evidence: SourceEvidence[], pagesText: string[]):
     return { ...item, verificationStatus: 'unverified', notes: '在指定頁面未找到相符摘錄，請人工核對。' }
   })
 }
-
-export function cropCanvas(canvas: HTMLCanvasElement, rect: { x: number; y: number; width: number; height: number }) {
-  const ratioX = canvas.width / canvas.clientWidth
-  const ratioY = canvas.height / canvas.clientHeight
-  const output = document.createElement('canvas')
-  output.width = Math.max(1, Math.round(rect.width * ratioX))
-  output.height = Math.max(1, Math.round(rect.height * ratioY))
-  const context = output.getContext('2d')
-  context?.drawImage(canvas, rect.x * ratioX, rect.y * ratioY, rect.width * ratioX, rect.height * ratioY, 0, 0, output.width, output.height)
-  return output.toDataURL('image/png')
-}

@@ -16,6 +16,7 @@ describe('project storage migration', () => {
 
     const paper = migrateBundle(legacy).papers[0]
     expect(paper.highlights).toEqual([])
+    expect(paper.floatingNote).toBe('')
     expect(paper.aiRegionSummaries).toEqual([])
   })
 })

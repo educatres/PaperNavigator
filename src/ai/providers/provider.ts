@@ -188,23 +188,6 @@ export async function generateStructured(
   return { text, usage: usageFromOpenAi(body) }
 }
 
-export async function analyzeImageRegion(config: ProviderConfig, dataUrl: string, prompt: string, signal?: AbortSignal) {
-  const base = config.baseUrl.replace(/\/$/, '')
-  if (config.id === 'google') {
-    const data = dataUrl.split(',')[1] ?? ''
-    const body = await fetchWithRetry(`${base}/models/${encodeURIComponent(config.modelId)}:generateContent`, {
-      method: 'POST', headers: googleHeaders(config.apiKey),
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS }] }, contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'image/png', data } }, { text: prompt }] }] }),
-    }, signal)
-    return googleText(body)
-  }
-  const body = await fetchWithRetry(`${base}/chat/completions`, {
-    method: 'POST', headers: bearerHeaders(config.apiKey),
-    body: JSON.stringify({ model: config.modelId, messages: [{ role: 'system', content: SYSTEM_INSTRUCTIONS }, { role: 'user', content: [{ type: 'text', text: prompt }, { type: 'image_url', image_url: { url: dataUrl } }] }], max_completion_tokens: 2048 }),
-  }, signal)
-  return body.choices?.[0]?.message?.content ?? ''
-}
-
 export async function generateText(config: ProviderConfig, prompt: string, signal?: AbortSignal, jsonSchema?: object): Promise<{ text: string; usage: AnalysisUsage }> {
   if (!config.apiKey.trim() || !config.modelId) throw new Error('請先測試連線並選擇模型。')
   const base = config.baseUrl.replace(/\/$/, '')

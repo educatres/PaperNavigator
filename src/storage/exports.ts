@@ -74,13 +74,9 @@ ${paper.highlights.map((item, index) => `- 螢光標記 ${index + 1}（${item.co
 
 ${paper.evidence.map((item) => `- PDF p.${item.pdfPageDisplay ?? '?'}［${item.verificationStatus}］：${item.quote ?? item.objectLabel ?? '未提供摘錄'}`).join('\n') || '無來源定位'}
 
-## AI 圈選摘要
+## 筆記
 
-${paper.aiRegionSummaries?.map((item) => `- PDF p.${item.pdfPageIndex + 1}：${item.summary}`).join('\n') || '無 AI 圈選摘要'}
-
-## 個人筆記
-
-${paper.notes.map((note) => `- [${note.verification}] ${note.body}`).join('\n') || '無'}
+${[paper.floatingNote?.trim() ? `- ${paper.floatingNote.trim()}` : '', ...paper.notes.map((note) => `- [${note.verification}] ${note.body}`)].filter(Boolean).join('\n') || '無'}
 `
 }
 

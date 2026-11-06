@@ -8,7 +8,7 @@ describe('highlight AI prompts', () => {
     const prompt = highlightSummaryPrompt(selected)
 
     expect(prompt).toContain(selected)
-    expect(prompt).toContain('螢光筆與 AI 摘要')
+    expect(prompt).toContain('「螢光筆」區塊')
     expect(prompt).toContain('AI 摘要」，不是翻譯')
     expect(prompt).toContain('不要逐句翻譯')
     expect(prompt).toContain('繁體中文摘要')

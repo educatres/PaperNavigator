@@ -6,7 +6,7 @@ Schema version：`1.0`。
 
 ## 來源與分析分離
 
-- `Paper`：檔案 hash、書目 metadata、各閱讀階段、observations、evidence、舊版 table analyses、citations、notes、PDF highlights 與 AI 圈選摘要。
+- `Paper`：檔案 hash、書目 metadata、各閱讀階段、observations、evidence、舊版 table analyses、citations、浮動純文字筆記 `floatingNote` 與 PDF highlights。舊版 `notes`、`aiRegionSummaries` 僅保留資料相容性，其中圈選摘要不再於介面使用。
 - `PdfHighlight`：paper／頁碼、0–1 正規化矩形座標、顏色、可選取文字、AI 摘要、翻譯與建立時間；同次選取只保存第一個版面區塊，舊資料仍可讀取 `rects`。
 - `SourceEvidence`：`paperId`、0-based `pdfPageIndex`、1-based `pdfPageDisplay`、印刷頁、section、object type／label、短摘錄、核對狀態與備註。
 - `MetricObservation`：方法來源、task、dataset／version、split、metric definition／direction、raw value、numeric value、unit、pretraining、hardware、protocol 與 evidence IDs。
@@ -14,7 +14,7 @@ Schema version：`1.0`。
 - `Pass2Result`：方法流程、資料集、指標、圖表、主張、observations、references 與 evidence。
 - `Pass3Result`：重建、假設、效度威脅、可重現性風險與研究題目。
 - `TableAnalysis`：原始 cell、排版線索、footnotes、observations、三步分析與 evidence。
-- `UserNote`：人工筆記與 checked／pending／concern 狀態，永不覆蓋 AI 原始輸出。
+- `UserNote`：舊版人工筆記相容型別；新版介面以 `Paper.floatingNote` 保存單一純文字筆記。
 
 缺值用 `null` 或 status，不使用虛構的 `0`。所有數值保留 `rawValue`，只有可安全解析時才另存 `numericValue`。
 

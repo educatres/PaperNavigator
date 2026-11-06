@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { PdfViewer } from './components/pdf/PdfViewer'
-import type { AiRegionSummary, AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
+import type { AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
 import { analyzePass1, analyzePass2, analyzePass3 } from './ai/orchestrator/analysis'
 import type { FormatRetryHandler } from './ai/orchestrator/analysis'
-import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
-import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, PASS3_PROMPT_VERSION, roiPrompt } from './ai/prompts/prompts'
+import { CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
+import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, PASS3_PROMPT_VERSION } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
 import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
 import { exportFullReportHtml, exportPaperMarkdown, exportPass3Html, exportProjectJson, importProjectJson } from './storage/exports'
@@ -18,7 +18,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'overview', label: '總覽' },
   { id: 'pass1', label: '第一遍' },
   { id: 'pass2', label: '第二遍' },
-  { id: 'notes', label: '筆記與重點標記' },
+  { id: 'notes', label: '重點標記' },
   { id: 'pass3', label: '第三遍' },
 ]
 
@@ -145,8 +145,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [lastUsage, setLastUsage] = useState<AnalysisUsage | null>(null)
   const [userPlan, setUserPlan] = useState('')
-  const [noteText, setNoteText] = useState('')
-  const [noteVerification, setNoteVerification] = useState<'checked' | 'pending' | 'concern'>('pending')
+  const [floatingNoteOpen, setFloatingNoteOpen] = useState(false)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const importRef = useRef<HTMLInputElement | null>(null)
   const reattachRef = useRef<HTMLInputElement | null>(null)
@@ -265,7 +264,7 @@ export default function App() {
           id, projectId: bundle.project.id, sha256: data.sha256, filename: data.filename,
           title: data.title, authors: data.author ? data.author.split(/[,;]/).map((item) => item.trim()).filter(Boolean) : [],
           year: null, doi: null, pageCount: data.pageCount, size: data.size, uploadTime: now,
-          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], highlights: [], aiRegionSummaries: [],
+          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], floatingNote: '', highlights: [],
         })
       }
       if (nextPapers.length) {
@@ -382,24 +381,12 @@ export default function App() {
   const runPass3 = () => {
     if (!selectedPaper?.pass1 || !selectedPaper.pass2) { setError('請先完成第一遍與第二遍閱讀。'); return }
     void startJob('正在執行第三遍閱讀', async (signal) => {
-      const response = await analyzePass3(config, selectedPaper.pass1!, selectedPaper.pass2!, selectedPaper.notes, selectedPaper.highlights, userPlan, signal)
+      const response = await analyzePass3(config, selectedPaper.pass1!, selectedPaper.pass2!, selectedPaper.notes, selectedPaper.highlights, userPlan, selectedPaper.floatingNote ?? '', signal)
       setLastUsage(response.usage)
       const text = response.text.trim()
       updatePaper(selectedPaper.id, (paper) => ({ ...paper, pass3: undefined, pass3Text: text, analysisModel: `${config.id}:${config.modelId}`, promptVersion: PASS3_PROMPT_VERSION }))
       setTab('pass3')
-    }, false, '第一遍、第二遍、筆記與螢光重點')
-  }
-
-  const analyzeRegion = async (dataUrl: string, targetPage: number) => {
-    if (!config.apiKey || !config.modelId) throw new Error('請先設定並測試 AI 連線。')
-    setBusy('正在分析圈選區域…')
-    try { return await analyzeImageRegion(config, dataUrl, roiPrompt(targetPage, ''), undefined) }
-    finally { setBusy('') }
-  }
-
-  const addAiRegionSummary = (summary: AiRegionSummary) => {
-    if (!selectedPaper) return
-    updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: [...(paper.aiRegionSummaries ?? []), summary] }))
+    }, false, '第一遍、第二遍、浮動筆記與螢光重點')
   }
 
   const runHighlightTextAction = (highlightId: string, action: 'summary' | 'translation') => {
@@ -443,13 +430,6 @@ export default function App() {
       setPageIndex(0)
       setTab('overview')
     }
-  }
-
-  const addNote = () => {
-    if (!selectedPaper || !noteText.trim()) return
-    const now = new Date().toISOString()
-    updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: [...paper.notes, { id: crypto.randomUUID(), paperId: paper.id, body: noteText.trim(), verification: noteVerification, createdAt: now, updatedAt: now }] }))
-    setNoteText('')
   }
 
   const importBackup = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -594,7 +574,7 @@ export default function App() {
       </aside>
 
       <section className="content-panel">
-        <nav className="tabbar" aria-label="閱讀階段">{TABS.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}</button>)}</nav>
+        <nav className="tabbar" aria-label="閱讀階段"><button className={floatingNoteOpen ? 'note-trigger active' : 'note-trigger'} disabled={!selectedPaper} onClick={() => setFloatingNoteOpen((value) => !value)} aria-pressed={floatingNoteOpen}>筆記</button>{TABS.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}</button>)}</nav>
         {!selectedPaper ? <Welcome onUpload={() => fileRef.current?.click()} /> : <div className="content-scroll">
           <div className="paper-title-row"><div><span className="eyebrow">{selectedPaper.filename}</span><h1>{selectedPaper.title ?? '尚未擷取論文標題'}</h1><p>{selectedPaper.authors.join('、') || '作者未報告'}{selectedPaper.year ? ` · ${selectedPaper.year}` : ''}</p></div><div className="paper-actions"><button className="small-button" onClick={() => exportPaperMarkdown(selectedPaper)}>匯出報告</button><button className="danger-link" onClick={() => removePaper(selectedPaper)}>刪除</button></div></div>
           {!selectedDocument && <div className="reattach-banner"><div><strong>找不到已保存的原始 PDF</strong><p>可能是瀏覽器儲存空間已被清除。請選擇同一檔案，系統會用 SHA-256 核對並重新保存。</p></div><button className="secondary-button" onClick={() => reattachRef.current?.click()}>重新附檔</button><input ref={reattachRef} hidden type="file" accept="application/pdf,.pdf" onChange={(event) => void reattach(event.target.files?.[0])} /></div>}
@@ -602,7 +582,7 @@ export default function App() {
           {tab === 'pass1' && <Pass1View paper={selectedPaper} onRun={runPass1} onEvidence={jumpToEvidence} />}
           {tab === 'pass2' && <Pass2View paper={selectedPaper} onRun={runPass2} onEvidence={jumpToEvidence} onJump={(page) => page !== null && setPageIndex(page)} />}
           {tab === 'pass3' && <Pass3View paper={selectedPaper} userPlan={userPlan} setUserPlan={setUserPlan} onRun={runPass3} onClear={() => updatePaper(selectedPaper.id, (paper) => ({ ...paper, pass3: undefined, pass3Text: undefined }))} />}
-          {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onDeleteHighlight={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))} onDeleteHighlightOutput={(id: string, output: 'aiSummary' | 'translation') => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((highlight) => highlight.id === id ? { ...highlight, [output]: undefined } : highlight) }))} onDeleteAiSummary={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: (paper.aiRegionSummaries ?? []).filter((summary) => summary.id !== id) }))} onHighlightAction={runHighlightTextAction} onChangeHighlightColor={updateHighlightColor} onJump={setPageIndex} />}
+          {tab === 'notes' && <NotesView paper={selectedPaper} onDeleteHighlight={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))} onDeleteHighlightOutput={(id: string, output: 'aiSummary' | 'translation') => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((highlight) => highlight.id === id ? { ...highlight, [output]: undefined } : highlight) }))} onHighlightAction={runHighlightTextAction} onChangeHighlightColor={updateHighlightColor} onJump={setPageIndex} />}
         </div>}
       </section>
       <div className="panel-resizer" role="separator" aria-label="調整閱讀內容與 PDF 欄寬" aria-orientation="vertical" tabIndex={0} onPointerDown={beginPdfResize} onKeyDown={resizePdfWithKeyboard} onDoubleClick={() => setPdfPanelWidth(null)} />
@@ -612,13 +592,71 @@ export default function App() {
         pageIndex={pageIndex}
         highlights={selectedPaper?.highlights ?? []}
         onPageChange={setPageIndex}
-        onAnalyzeRegion={analyzeRegion}
-        onAddAiRegionSummary={addAiRegionSummary}
         onAddHighlight={(highlight: PdfHighlight) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: [...paper.highlights, highlight] }))}
         onDeleteHighlight={(id: string) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))}
       />
     </main>
+    {selectedPaper && floatingNoteOpen && <FloatingNote value={selectedPaper.floatingNote ?? ''} onChange={(value) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, floatingNote: value }))} onClose={() => setFloatingNoteOpen(false)} />}
   </div>
+}
+
+interface FloatingNoteFrame { x: number; y: number; width: number; height: number }
+
+function initialFloatingNoteFrame(): FloatingNoteFrame {
+  const availableWidth = Math.max(280, window.innerWidth - 24)
+  const availableHeight = Math.max(180, window.innerHeight - 24)
+  const fallback = { x: Math.max(12, window.innerWidth - 430), y: 88, width: Math.min(360, availableWidth), height: Math.min(280, availableHeight) }
+  try {
+    const saved = JSON.parse(window.localStorage.getItem('papernavigator.floating-note-frame') ?? '') as Partial<FloatingNoteFrame>
+    if ([saved.x, saved.y, saved.width, saved.height].every((value) => typeof value === 'number' && Number.isFinite(value))) {
+      const width = Math.min(availableWidth, Math.max(280, saved.width!))
+      const height = Math.min(availableHeight, Math.max(180, saved.height!))
+      return { x: Math.max(0, Math.min(window.innerWidth - width, saved.x!)), y: Math.max(0, Math.min(window.innerHeight - 48, saved.y!)), width, height }
+    }
+  } catch { /* Use the default frame when saved geometry is unavailable. */ }
+  return fallback
+}
+
+function FloatingNote({ value, onChange, onClose }: { value: string; onChange: (value: string) => void; onClose: () => void }) {
+  const [frame, setFrame] = useState<FloatingNoteFrame>(initialFloatingNoteFrame)
+  const gesture = useRef<({ mode: 'move' | 'resize'; pointerX: number; pointerY: number } & FloatingNoteFrame) | null>(null)
+
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      const current = gesture.current
+      if (!current) return
+      const deltaX = event.clientX - current.pointerX
+      const deltaY = event.clientY - current.pointerY
+      if (current.mode === 'move') {
+        setFrame({ x: Math.max(0, Math.min(window.innerWidth - current.width, current.x + deltaX)), y: Math.max(0, Math.min(window.innerHeight - 48, current.y + deltaY)), width: current.width, height: current.height })
+      } else {
+        setFrame({ x: current.x, y: current.y, width: Math.max(280, Math.min(window.innerWidth - current.x - 12, current.width + deltaX)), height: Math.max(180, Math.min(window.innerHeight - current.y - 12, current.height + deltaY)) })
+      }
+    }
+    const finish = () => { gesture.current = null }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', finish); window.removeEventListener('pointercancel', finish) }
+  }, [])
+
+  useEffect(() => {
+    try { window.localStorage.setItem('papernavigator.floating-note-frame', JSON.stringify(frame)) }
+    catch { /* The note remains movable when browser storage is unavailable. */ }
+  }, [frame])
+
+  const beginGesture = (mode: 'move' | 'resize') => (event: ReactPointerEvent<HTMLElement>) => {
+    if (event.button !== 0) return
+    event.preventDefault()
+    gesture.current = { mode, pointerX: event.clientX, pointerY: event.clientY, ...frame }
+  }
+
+  return <aside className="floating-note" style={{ left: frame.x, top: frame.y, width: frame.width, height: frame.height }} aria-label="浮動筆記">
+    <div className="floating-note-heading" onPointerDown={beginGesture('move')}><strong>筆記</strong><span>拖曳移動</span><button onPointerDown={(event) => event.stopPropagation()} onClick={onClose} aria-label="關閉筆記">×</button></div>
+    <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder="輸入純文字筆記；第三遍分析會一起參考這些內容。" aria-label="筆記內容" />
+    <span className="floating-note-save-state">自動保存 · 第三遍會納入分析</span>
+    <button className="floating-note-resizer" onPointerDown={beginGesture('resize')} aria-label="拖曳調整筆記大小" title="拖曳調整大小" />
+  </aside>
 }
 
 function Welcome({ onUpload }: { onUpload: () => void }) {
@@ -628,7 +666,7 @@ function Welcome({ onUpload }: { onUpload: () => void }) {
 function Overview({ paper, document, onPass1, onPass2, onPass3, onJump }: { paper: Paper; document: PdfDocumentData | null; onPass1: () => void; onPass2: () => void; onPass3: () => void; onJump: (page: number) => void }) {
   return <div className="section-stack"><div className="metric-grid"><article><span>PDF 頁數</span><strong>{paper.pageCount}</strong><small>{formatBytes(paper.size)}</small></article><article><span>來源核對</span><strong>{paper.evidence.filter((item) => item.verificationStatus === 'matched').length}<em> / {paper.evidence.length}</em></strong><small>已定位摘錄</small></article><article><span>結果觀測</span><strong>{paper.observations.length}</strong><small>保留原始數值</small></article><article><span>閱讀進度</span><strong>{paper.pass3 || paper.pass3Text ? '3 / 3' : paper.pass2 ? '2 / 3' : paper.pass1 ? '1 / 3' : '0 / 3'}</strong><small>三遍閱讀法</small></article></div>
     {document?.warnings.map((warning) => <div className="warning-card" key={warning}>△ {warning}</div>)}
-    <div className="stage-grid"><article className={paper.pass1 ? 'stage-card complete' : 'stage-card'}><span>第一遍 · 鳥瞰</span><h2>五個 C 與閱讀決策</h2><p>擷取研究問題、主要貢獻與值得繼續閱讀的理由。</p><button className="primary-button" disabled={!document} onClick={onPass1}>{paper.pass1 ? '重新分析第一遍' : '開始第一遍'}</button></article><article className={paper.pass2 ? 'stage-card complete' : 'stage-card'}><span>第二遍 · 理解</span><h2>方法、實驗與表格</h2><p>只在你決定深入後啟動，避免一次產生全部 API 用量。</p><button className="secondary-button" disabled={!document || !paper.pass1} onClick={onPass2}>{paper.pass2 ? '重新分析第二遍' : '深入第二遍'}</button></article><article className={paper.pass3 || paper.pass3Text ? 'stage-card complete' : 'stage-card'}><span>第三遍 · 重建</span><h2>假設、風險與研究題目</h2><p>根據第一遍、第二遍、筆記與螢光重點重建，不重新讀取全文。</p><button className="secondary-button" disabled={!paper.pass2} onClick={onPass3}>{paper.pass3 || paper.pass3Text ? '重新分析第三遍' : '進入第三遍'}</button></article></div>
+    <div className="stage-grid"><article className={paper.pass1 ? 'stage-card complete' : 'stage-card'}><span>第一遍 · 鳥瞰</span><h2>五個 C 與閱讀決策</h2><p>擷取研究問題、主要貢獻與值得繼續閱讀的理由。</p><button className="primary-button" disabled={!document} onClick={onPass1}>{paper.pass1 ? '重新分析第一遍' : '開始第一遍'}</button></article><article className={paper.pass2 ? 'stage-card complete' : 'stage-card'}><span>第二遍 · 理解</span><h2>方法、實驗與表格</h2><p>只在你決定深入後啟動，避免一次產生全部 API 用量。</p><button className="secondary-button" disabled={!document || !paper.pass1} onClick={onPass2}>{paper.pass2 ? '重新分析第二遍' : '深入第二遍'}</button></article><article className={paper.pass3 || paper.pass3Text ? 'stage-card complete' : 'stage-card'}><span>第三遍 · 重建</span><h2>假設、風險與研究題目</h2><p>根據第一遍、第二遍、浮動筆記與螢光重點重建，不重新讀取全文。</p><button className="secondary-button" disabled={!paper.pass2} onClick={onPass3}>{paper.pass3 || paper.pass3Text ? '重新分析第三遍' : '進入第三遍'}</button></article></div>
     {paper.pass2?.tables.length ? <section className="content-card"><div className="card-heading"><div><span className="eyebrow">FOUND IN PAPER</span><h2>圖表索引</h2></div></div><div className="index-list">{[...paper.pass2.tables, ...paper.pass2.figures].map((item) => <button key={`${item.label}-${item.pdfPageIndex}`} onClick={() => item.pdfPageIndex !== null && onJump(item.pdfPageIndex)}><strong>{item.label}</strong><span>{item.title}</span><small>{item.pdfPageIndex === null ? '頁碼待確認' : `PDF p.${item.pdfPageIndex + 1}`}</small></button>)}</div></section> : null}
   </div>
 }
@@ -653,7 +691,7 @@ function Pass3View({ paper, userPlan, setUserPlan, onRun, onClear }: { paper: Pa
   const text = paper.pass3Text?.trim()
   const data = paper.pass3
   const canExportFullReport = Boolean(paper.pass1 && paper.pass2 && (text || data))
-  return <div className="section-stack"><section className="analysis-control pass3-control"><div><span className="eyebrow">VIRTUAL RECONSTRUCTION</span><h2>第三遍：重建與批判</h2><p>根據第一遍、第二遍、筆記與螢光重點重新分析；不重新讀取全文，直接產生 HTML 閱讀報告。</p></div><div className="reimplementation"><label>如果由我重新實作，我會怎麼做？<textarea value={userPlan} onChange={(event) => setUserPlan(event.target.value)} placeholder="先寫下自己的方案，再與 AI 建議並列…" /></label><div className="reimplementation-actions"><button className="secondary-button" disabled title="全文重讀功能尚未開放">全文重讀（尚未開放）</button><button className="primary-button" disabled={!paper.pass2} onClick={onRun}>{text || data ? '依最新筆記與螢光重點重新分析' : '產生第三遍 HTML 報告'}</button><button className="secondary-button" disabled={!canExportFullReport} title={canExportFullReport ? '下載包含三遍分析與證據附錄的 A4 列印版' : '完成三遍閱讀後即可匯出'} onClick={() => exportFullReportHtml(paper)}>下載 A4 完整報告</button></div></div></section>{text ? <section className="content-card pass3-text-card"><div className="section-title"><div><span className="eyebrow">HTML / MARKDOWN REPORT</span><h2>第三遍閱讀報告</h2></div><div className="pass3-report-actions"><button className="small-button" onClick={() => exportPass3Html(paper, text)}>下載第三遍 .html</button><button className="small-button danger-button" onClick={onClear}>清除閱讀報告</button></div></div><section className="pass3-report-subsection"><div className="pass3-report-subsection-heading"><span className="eyebrow">READING REPORT</span><h3>閱讀報告</h3></div><div className="pass3-rich-output" dangerouslySetInnerHTML={{ __html: richTextToHtml(text) }} /></section></section> : data ? <><section className="content-card"><div className="section-title"><h2>重建程序</h2><button className="small-button danger-button" onClick={onClear}>清除閱讀報告</button></div><div className="reconstruction-list">{data.reconstruction.map((item, index) => <article key={`${item.step}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><h3>{item.step}<i className={`recon-status ${item.status}`}>{item.status}</i></h3><p>{item.detail}</p></div></article>)}</div></section><div className="two-column"><CriticalList title="隱藏假設" items={data.assumptions} /><CriticalList title="效度威脅" items={data.threats} /><CriticalList title="可重現風險" items={data.reproducibilityRisks} /></div><section><div className="section-title"><div><span className="eyebrow">AI-GENERATED, TESTABLE</span><h2>後續研究題目</h2></div></div><div className="idea-grid">{data.researchIdeas.map((item, index) => <article key={item.question}><span>IDEA {index + 1}</span><h3>{item.question}</h3><p><b>動機：</b>{item.motivation}</p><p><b>假設：</b>{item.hypothesis}</p><p><b>最小實驗：</b>{item.minimumExperiment}</p><p><b>資料／指標：</b>{item.requiredData} · {item.metric}</p></article>)}</div></section></> : <EmptyAnalysis title="尚未進入第三遍" text="先完成第二遍，並寫下自己的重建思路。" />}</div>
+  return <div className="section-stack"><section className="analysis-control pass3-control"><div><span className="eyebrow">VIRTUAL RECONSTRUCTION</span><h2>第三遍：重建與批判</h2><p>根據第一遍、第二遍、浮動筆記與螢光重點重新分析；不重新讀取全文，直接產生 HTML 閱讀報告。</p></div><div className="reimplementation"><label>如果由我重新實作，我會怎麼做？<textarea value={userPlan} onChange={(event) => setUserPlan(event.target.value)} placeholder="先寫下自己的方案，再與 AI 建議並列…" /></label><div className="reimplementation-actions"><button className="secondary-button" disabled title="全文重讀功能尚未開放">全文重讀（尚未開放）</button><button className="primary-button" disabled={!paper.pass2} onClick={onRun}>{text || data ? '依最新浮動筆記與螢光重點重新分析' : '產生第三遍 HTML 報告'}</button><button className="secondary-button" disabled={!canExportFullReport} title={canExportFullReport ? '下載包含三遍分析與證據附錄的 A4 列印版' : '完成三遍閱讀後即可匯出'} onClick={() => exportFullReportHtml(paper)}>下載 A4 完整報告</button></div></div></section>{text ? <section className="content-card pass3-text-card"><div className="section-title"><div><span className="eyebrow">HTML / MARKDOWN REPORT</span><h2>第三遍閱讀報告</h2></div><div className="pass3-report-actions"><button className="small-button" onClick={() => exportPass3Html(paper, text)}>下載第三遍 .html</button><button className="small-button danger-button" onClick={onClear}>清除閱讀報告</button></div></div><section className="pass3-report-subsection"><div className="pass3-report-subsection-heading"><span className="eyebrow">READING REPORT</span><h3>閱讀報告</h3></div><div className="pass3-rich-output" dangerouslySetInnerHTML={{ __html: richTextToHtml(text) }} /></section></section> : data ? <><section className="content-card"><div className="section-title"><h2>重建程序</h2><button className="small-button danger-button" onClick={onClear}>清除閱讀報告</button></div><div className="reconstruction-list">{data.reconstruction.map((item, index) => <article key={`${item.step}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><h3>{item.step}<i className={`recon-status ${item.status}`}>{item.status}</i></h3><p>{item.detail}</p></div></article>)}</div></section><div className="two-column"><CriticalList title="隱藏假設" items={data.assumptions} /><CriticalList title="效度威脅" items={data.threats} /><CriticalList title="可重現風險" items={data.reproducibilityRisks} /></div><section><div className="section-title"><div><span className="eyebrow">AI-GENERATED, TESTABLE</span><h2>後續研究題目</h2></div></div><div className="idea-grid">{data.researchIdeas.map((item, index) => <article key={item.question}><span>IDEA {index + 1}</span><h3>{item.question}</h3><p><b>動機：</b>{item.motivation}</p><p><b>假設：</b>{item.hypothesis}</p><p><b>最小實驗：</b>{item.minimumExperiment}</p><p><b>資料／指標：</b>{item.requiredData} · {item.metric}</p></article>)}</div></section></> : <EmptyAnalysis title="尚未進入第三遍" text="先完成第二遍，並寫下自己的重建思路。" />}</div>
 }
 
 function CriticalList({ title, items }: { title: string; items: Array<{ title: string; assessment: string; status: string }> }) {
@@ -662,35 +700,20 @@ function CriticalList({ title, items }: { title: string; items: Array<{ title: s
 
 interface NotesViewProps {
   paper: Paper
-  text: string
-  setText: (value: string) => void
-  verification: 'checked' | 'pending' | 'concern'
-  setVerification: (value: 'checked' | 'pending' | 'concern') => void
-  onAdd: () => void
-  onDelete: (id: string) => void
   onDeleteHighlight: (id: string) => void
   onDeleteHighlightOutput: (id: string, output: 'aiSummary' | 'translation') => void
-  onDeleteAiSummary: (id: string) => void
   onHighlightAction: (id: string, action: 'summary' | 'translation') => void
   onChangeHighlightColor: (id: string, color: PdfHighlight['color']) => void
   onJump: (page: number) => void
 }
 
-function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onDeleteHighlight, onDeleteHighlightOutput, onDeleteAiSummary, onHighlightAction, onChangeHighlightColor, onJump }: NotesViewProps) {
-  const summaries = paper.aiRegionSummaries ?? []
+function NotesView({ paper, onDeleteHighlight, onDeleteHighlightOutput, onHighlightAction, onChangeHighlightColor, onJump }: NotesViewProps) {
   const colors: Array<{ id: PdfHighlight['color']; label: string }> = [{ id: 'yellow', label: '黃' }, { id: 'green', label: '綠' }, { id: 'pink', label: '粉紅' }, { id: 'blue', label: '淺藍' }]
   return <div className="section-stack">
     <section className="content-card">
-      <div className="card-heading"><div><span className="eyebrow">YOUR ANNOTATIONS</span><h2>個人筆記</h2></div></div>
-      <textarea className="note-input" value={text} onChange={(event) => setText(event.target.value)} placeholder="記錄疑問、驗證結果或自己的推論；不會覆蓋 AI 原始輸出。" />
-      <div className="note-actions"><select value={verification} onChange={(event) => setVerification(event.target.value as 'checked' | 'pending' | 'concern')}><option value="pending">待查證</option><option value="checked">已查原文</option><option value="concern">有疑慮</option></select><button className="primary-button compact" disabled={!text.trim()} onClick={onAdd}>加入筆記</button></div>
-      <div className="notes-list">{paper.notes.map((note) => <article key={note.id}><span className={`note-state ${note.verification}`}>{note.verification === 'checked' ? '已查原文' : note.verification === 'concern' ? '有疑慮' : '待查證'}</span><p>{note.body}</p><button className="danger-link" onClick={() => onDelete(note.id)}>刪除</button></article>)}</div>
-    </section>
-    <section className="content-card">
-      <div className="card-heading"><div><span className="eyebrow">SOURCE ANNOTATIONS</span><h2>螢光筆與 AI 摘要</h2></div></div>
-      <div className="annotation-summary"><strong>{paper.highlights.length} 個螢光標記</strong><strong>{summaries.length} 個 AI 圈選摘要</strong></div>
+      <div className="card-heading"><h2>螢光筆</h2></div>
+      <div className="annotation-summary"><strong>{paper.highlights.length} 個螢光標記</strong></div>
       <div className="annotation-list">
-        <h3>螢光筆</h3>
         {paper.highlights.length ? paper.highlights.map((highlight, index) => <article className="highlight-record" key={highlight.id}>
           <span className={`annotation-color ${highlight.color}`} />
           <div className="annotation-copy"><p className="annotation-source">{highlight.text?.trim() || `文字標記 ${index + 1}`}</p>
@@ -704,8 +727,6 @@ function NotesView({ paper, text, setText, verification, setVerification, onAdd,
             <HighlightOutputs highlight={highlight} onDelete={(output) => onDeleteHighlightOutput(highlight.id, output)} />
           </div>
         </article>) : <p>尚未建立螢光標記。</p>}
-        <h3>AI 圈選摘要</h3>
-        {summaries.length ? summaries.map((summary) => <article key={summary.id}><p>{summary.summary}</p><button className="small-button" onClick={() => onJump(summary.pdfPageIndex)}>PDF p.{summary.pdfPageIndex + 1}</button><button className="danger-link" onClick={() => onDeleteAiSummary(summary.id)}>刪除</button></article>) : <p>尚未建立 AI 圈選摘要。</p>}
       </div>
     </section>
   </div>

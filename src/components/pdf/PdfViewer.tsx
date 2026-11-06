@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import type { AiRegionSummary, PdfDocumentData, PdfHighlight, PdfHighlightColor, PdfHighlightRect } from '../../domain/types'
-import { cropCanvas, openPdf, renderPdfPage } from '../../pdf/pdfClient'
+import type { PdfDocumentData, PdfHighlight, PdfHighlightColor, PdfHighlightRect } from '../../domain/types'
+import { openPdf, renderPdfPage } from '../../pdf/pdfClient'
 
 interface Props {
   document: PdfDocumentData | null
@@ -9,14 +9,11 @@ interface Props {
   pageIndex: number
   highlights: PdfHighlight[]
   onPageChange: (pageIndex: number) => void
-  onAnalyzeRegion: (dataUrl: string, pageIndex: number) => Promise<string>
-  onAddAiRegionSummary: (summary: AiRegionSummary) => void
   onAddHighlight: (highlight: PdfHighlight) => void
   onDeleteHighlight: (id: string) => void
 }
 
-interface Rect { x: number; y: number; width: number; height: number }
-type PdfTool = 'browse' | 'pan' | 'highlight' | 'erase' | 'roi'
+type PdfTool = 'browse' | 'pan' | 'highlight' | 'erase'
 type Zoom = 'fit' | number
 
 const highlightColors: Record<PdfHighlightColor, string> = {
@@ -112,7 +109,7 @@ function selectionElement(node: Node | null) {
   return element?.closest('span') ?? element
 }
 
-export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChange, onAnalyzeRegion, onAddAiRegionSummary, onAddHighlight, onDeleteHighlight }: Props) {
+export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChange, onAddHighlight, onDeleteHighlight }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const pageNodes = useRef<Record<number, HTMLDivElement | null>>({})
   const visiblePage = useRef(pageIndex)
@@ -200,7 +197,7 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
     setIsPanning(false)
   }
 
-  if (!document) return <aside className="pdf-panel empty-viewer"><div><span className="empty-icon">⌁</span><h2>原文檢視器</h2><p>選取論文後可連續檢視、文字標記與 AI 圈選。</p></div></aside>
+  if (!document) return <aside className="pdf-panel empty-viewer"><div><span className="empty-icon">⌁</span><h2>原文檢視器</h2><p>選取論文後可連續檢視與建立文字標記。</p></div></aside>
 
   const pageCount = pdf?.numPages ?? document.pageCount
   const zoomLabel = zoom === 'fit' ? '同寬' : `${Math.round(zoom * 100)}%`
@@ -220,7 +217,6 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
         <button className={tool === 'highlight' ? 'small-button active' : 'small-button'} onClick={() => switchTool('highlight')} aria-pressed={tool === 'highlight'} title="選取 PDF 文字並建立螢光標記"><span className="tool-icon" aria-hidden="true">🖍</span>螢光筆</button>
         <div className="highlight-toolbar-palette" aria-label="螢光筆顏色">{(Object.keys(highlightColors) as PdfHighlightColor[]).map((item) => <button key={item} aria-label={`${colorLabels[item]}色螢光筆`} title={`${colorLabels[item]}色`} className={color === item ? 'active' : ''} style={{ background: highlightColors[item] }} onClick={() => setColor(item)} />)}</div>
         <button className={tool === 'erase' ? 'small-button active' : 'small-button'} onClick={() => switchTool('erase')} aria-pressed={tool === 'erase'} title="點選頁面上的螢光標記即可刪除"><span className="tool-icon" aria-hidden="true">⌫</span>刪除標記</button>
-        <button className={tool === 'roi' ? 'small-button active' : 'small-button'} onClick={() => switchTool('roi')} aria-pressed={tool === 'roi'} title="拖曳框選 PDF 的 Figure 或 Table，交給 AI 解讀"><span className="tool-icon" aria-hidden="true">⌗</span>AI 圈選</button>
       </div>
     </div>
     <div className={`pdf-viewport mode-${tool}${isPanning ? ' panning' : ''}`} ref={viewportRef} onScroll={handleScroll} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
@@ -243,8 +239,6 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
             color={color}
             viewportWidth={viewportWidth}
             zoom={zoom}
-            onAnalyzeRegion={onAnalyzeRegion}
-            onAddAiRegionSummary={onAddAiRegionSummary}
             onAddHighlight={onAddHighlight}
             onDeleteHighlight={onDeleteHighlight}
           />
@@ -252,7 +246,6 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
       </div>}
     </div>
     {tool === 'erase' && <div className="pdf-annotation-actions erase-hint"><p>點選頁面上的螢光標記即可刪除，不會影響分析或筆記。</p></div>}
-    {tool === 'roi' && <div className="pdf-annotation-actions"><p>拖曳框選 Figure／Table，再請 AI 針對區域解讀；摘要會保存到「筆記與重點標記」。</p></div>}
   </aside>
 }
 
@@ -265,78 +258,25 @@ interface PdfPageProps {
   color: PdfHighlightColor
   viewportWidth: number
   zoom: Zoom
-  onAnalyzeRegion: (dataUrl: string, pageIndex: number) => Promise<string>
-  onAddAiRegionSummary: (summary: AiRegionSummary) => void
   onAddHighlight: (highlight: PdfHighlight) => void
   onDeleteHighlight: (id: string) => void
 }
 
-function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWidth, zoom, onAnalyzeRegion, onAddAiRegionSummary, onAddHighlight, onDeleteHighlight }: PdfPageProps) {
+function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWidth, zoom, onAddHighlight, onDeleteHighlight }: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const textLayerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState('')
-  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
-  const [selection, setSelection] = useState<Rect | null>(null)
-  const [roiResult, setRoiResult] = useState('')
-  const [roiBusy, setRoiBusy] = useState(false)
 
   useEffect(() => {
     if (!canvasRef.current) return
     let active = true
     const controller = new AbortController()
     setRenderError('')
-    setSelection(null)
     const width = Math.max(320, viewportWidth - 28)
     renderPdfPage(pdf, pageIndex + 1, canvasRef.current, width, textLayerRef.current ?? undefined, zoom === 'fit' ? undefined : zoom, controller.signal)
       .catch((error) => { if (active) setRenderError(error instanceof Error ? error.message : String(error)) })
     return () => { active = false; controller.abort() }
   }, [pdf, pageIndex, viewportWidth, zoom])
-
-  const point = (event: React.PointerEvent<HTMLDivElement>) => {
-    const bounds = canvasRef.current!.getBoundingClientRect()
-    return {
-      x: Math.max(0, Math.min(bounds.width, event.clientX - bounds.left)),
-      y: Math.max(0, Math.min(bounds.height, event.clientY - bounds.top)),
-      maxX: bounds.width,
-      maxY: bounds.height,
-    }
-  }
-
-  const rectTo = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragStart) return null
-    const value = point(event)
-    return {
-      rect: { x: Math.min(dragStart.x, value.x), y: Math.min(dragStart.y, value.y), width: Math.abs(value.x - dragStart.x), height: Math.abs(value.y - dragStart.y) },
-      maxX: value.maxX,
-      maxY: value.maxY,
-    }
-  }
-
-  const begin = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (tool !== 'roi' || !canvasRef.current || event.button !== 0) return
-    const value = point(event)
-    event.preventDefault()
-    event.currentTarget.setPointerCapture(event.pointerId)
-    setDragStart({ x: value.x, y: value.y })
-    setSelection({ x: value.x, y: value.y, width: 0, height: 0 })
-    setRoiResult('')
-  }
-
-  const move = (event: React.PointerEvent<HTMLDivElement>) => {
-    const next = rectTo(event)
-    if (!next) return
-    event.preventDefault()
-    setSelection(next.rect)
-  }
-
-  const end = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (tool !== 'roi') return
-    const next = rectTo(event)
-    if (!next) return
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
-    setDragStart(null)
-    setSelection(next.rect)
-  }
 
   const highlightSelection = () => {
     if (tool !== 'highlight' || !textLayerRef.current || !canvasRef.current) return
@@ -401,20 +341,8 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWid
     current.removeAllRanges()
   }
 
-  const analyze = async () => {
-    if (!canvasRef.current || !selection || selection.width < 10 || selection.height < 10) return
-    setRoiBusy(true)
-    setRoiResult('')
-    try {
-      const summary = await onAnalyzeRegion(cropCanvas(canvasRef.current, selection), pageIndex)
-      setRoiResult(summary)
-      if (summary.trim()) onAddAiRegionSummary({ id: crypto.randomUUID(), paperId, pdfPageIndex: pageIndex, summary: summary.trim(), createdAt: new Date().toISOString() })
-    } catch (error) { setRoiResult(error instanceof Error ? error.message : String(error)) }
-    finally { setRoiBusy(false) }
-  }
-
   return <div className="pdf-page-content">
-    <div className="pdf-canvas-stage" onPointerDown={begin} onPointerMove={move} onPointerUp={(event) => { end(event); highlightSelection() }} onPointerCancel={() => { setDragStart(null); setSelection(null) }}>
+    <div className="pdf-canvas-stage" onPointerUp={highlightSelection}>
       <canvas ref={canvasRef} />
       <div ref={textLayerRef} className="pdf-text-layer" aria-label={`PDF 第 ${pageIndex + 1} 頁文字層`} />
       {highlights.flatMap((highlight) => pageRects(highlight).map((rect, index) => <button
@@ -425,12 +353,7 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWid
         onClick={(event) => { event.stopPropagation(); if (tool === 'erase') onDeleteHighlight(highlight.id) }}
         style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%`, background: highlightColors[highlight.color] }}
       />))}
-      {selection && tool === 'roi' && <div className="roi-selection" style={{ left: selection.x, top: selection.y, width: selection.width, height: selection.height }} />}
     </div>
     {renderError && <p className="inline-error">{renderError}</p>}
-    {tool === 'roi' && selection && <div className="roi-page-actions">
-      <button className="small-button" disabled={roiBusy} onClick={() => void analyze()}>{roiBusy ? '分析中…' : '分析這個圈選區域'}</button>
-      {roiResult && <div className="roi-result">{roiResult}</div>}
-    </div>}
   </div>
 }

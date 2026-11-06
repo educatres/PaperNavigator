@@ -27,6 +27,7 @@ export interface PdfHighlightRect {
   height: number
 }
 
+/** @deprecated Retained only so older project backups can still be imported. */
 export interface AiRegionSummary {
   id: string
   paperId: string
@@ -122,7 +123,9 @@ export interface Paper {
   evidence: SourceEvidence[]
   observations: MetricObservation[]
   notes: UserNote[]
+  floatingNote?: string
   highlights: PdfHighlight[]
+  /** @deprecated Legacy import compatibility; no longer shown or created. */
   aiRegionSummaries?: AiRegionSummary[]
   analysisModel?: string
   promptVersion?: string

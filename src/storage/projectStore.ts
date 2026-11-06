@@ -37,6 +37,7 @@ export function migrateBundle(value: ProjectBundle): ProjectBundle {
       evidence: paper.evidence ?? [],
       observations: paper.observations ?? [],
       notes: paper.notes ?? [],
+      floatingNote: paper.floatingNote ?? '',
       highlights: paper.highlights ?? [],
       aiRegionSummaries: paper.aiRegionSummaries ?? [],
     })),

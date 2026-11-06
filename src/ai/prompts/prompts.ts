@@ -18,8 +18,9 @@ export function pass2Prompt(pass1: Pass1Result) {
 第一遍結果僅供脈絡，不得把其中內容當成新證據：${wrapUntrusted('pass1-cache', JSON.stringify(pass1))}`
 }
 
-export function pass3Prompt(pass1: Pass1Result, pass2: Pass2Result, userPlan: string, notes: UserNote[] = [], highlights: PdfHighlight[] = []) {
+export function pass3Prompt(pass1: Pass1Result, pass2: Pass2Result, userPlan: string, notes: UserNote[] = [], highlights: PdfHighlight[] = [], floatingNote = '') {
   const annotationContext = {
+    floatingNote,
     notes: notes.map((note) => ({ body: note.body, verification: note.verification })),
     highlights: highlights.map((highlight) => ({ page: highlight.pdfPageIndex, color: highlight.color, text: highlight.text ?? '', aiSummary: highlight.aiSummary ?? '', translation: highlight.translation ?? '' })),
   }
@@ -27,17 +28,17 @@ export function pass3Prompt(pass1: Pass1Result, pass2: Pass2Result, userPlan: st
 只輸出可直接嵌入頁面的 HTML fragment，不要輸出 Markdown、JSON、程式碼圍欄、<!DOCTYPE>、<html>、<head>、<body>、script、class、id 或任何事件屬性。只能使用 section、h2、h3、p、ul、ol、li、strong、em、span、table、thead、tbody、tr、th、td、code、blockquote、hr。需要標記重點時，可使用 <span style="color:#B42318">文字</span>；style 僅能包含 color，且只使用 6 位十六進位色碼，禁止其他 CSS 或屬性。以清楚的標題與區塊組織報告，不要說明輸出格式。報告應重建問題、資料處理、模型、loss、訓練、評估與超參數，逐項指出 explicit／implicit／missing；檢查假設、baseline、ablation、統計可靠性、可重現性與威脅效度；提出 3–5 個可驗證研究題目，包含動機、假設、最小實驗、所需資料與驗證指標。這些是 AI 建議，不是原文結論；不得宣稱已重新實作。需要原文支持的判斷，只能使用第一、二遍中已有的 evidenceIds。
 
 第一、二遍資料：${wrapUntrusted('previous-analysis', JSON.stringify({ pass1, pass2 }))}
-使用者筆記與螢光重點：${wrapUntrusted('user-annotations', JSON.stringify(annotationContext))}
+使用者浮動筆記、舊版筆記與螢光重點：${wrapUntrusted('user-annotations', JSON.stringify(annotationContext))}
 使用者重建想法：${wrapUntrusted('user-reimplementation-plan', userPlan || '未提供')}`
 }
 
 export function highlightSummaryPrompt(text: string) {
-  return `你要執行的是「AI 摘要」，不是翻譯。原文是使用者在「螢光筆與 AI 摘要」區塊中看到的英文螢光文字；請只根據這段英文撰寫忠實、精簡的繁體中文摘要。抓住原文的主旨、目的、方法、結果、關鍵條件與限制（只摘要輸入中實際提到的內容）；不要逐句翻譯，不要把完整原文改寫，不要加入原文沒有的推論。輸入只有下方螢光筆選取文字，不得使用 PDF 其他頁面、其他螢光標記、筆記或外部內容。最多 3 句；可用 Markdown 的短標題或條列提高閱讀性，只輸出摘要正文，不要輸出本提示詞、任務說明或 untrusted 標記。
+  return `你要執行的是「AI 摘要」，不是翻譯。原文是使用者在「螢光筆」區塊中看到的英文螢光文字；請只根據這段英文撰寫忠實、精簡的繁體中文摘要。抓住原文的主旨、目的、方法、結果、關鍵條件與限制（只摘要輸入中實際提到的內容）；不要逐句翻譯，不要把完整原文改寫，不要加入原文沒有的推論。輸入只有下方螢光筆選取文字，不得使用 PDF 其他頁面、其他螢光標記、筆記或外部內容。最多 3 句；可用 Markdown 的短標題或條列提高閱讀性，只輸出摘要正文，不要輸出本提示詞、任務說明或 untrusted 標記。
 ${wrapUntrusted('highlight-text', text)}`
 }
 
 export function highlightTranslationPrompt(text: string) {
-  return `你要執行的是「翻譯」，不是摘要。請將使用者在「螢光筆與 AI 摘要」區塊中看到的英文螢光文字完整翻譯成自然、準確的繁體中文。輸入只有下方這一筆螢光筆選取文字，包含該次選取跨越的所有行與句子；不可刪節、濃縮、摘要、改寫或補充螢光區域以外的內容。保留原文的段落關係、條件、數值、單位、專有名詞與語氣；不得使用 PDF 其他頁面、其他螢光標記、筆記或外部內容。可用 Markdown 的段落或條列維持閱讀性，只輸出完整翻譯正文，不要前言或解釋，不要輸出本提示詞、任務說明或 untrusted 標記。
+  return `你要執行的是「翻譯」，不是摘要。請將使用者在「螢光筆」區塊中看到的英文螢光文字完整翻譯成自然、準確的繁體中文。輸入只有下方這一筆螢光筆選取文字，包含該次選取跨越的所有行與句子；不可刪節、濃縮、摘要、改寫或補充螢光區域以外的內容。保留原文的段落關係、條件、數值、單位、專有名詞與語氣；不得使用 PDF 其他頁面、其他螢光標記、筆記或外部內容。可用 Markdown 的段落或條列維持閱讀性，只輸出完整翻譯正文，不要前言或解釋，不要輸出本提示詞、任務說明或 untrusted 標記。
 ${wrapUntrusted('highlight-text', text)}`
 }
 
@@ -124,8 +125,4 @@ Step A：僅指出「本文所報告的比較結果」與表內定位，不得�
 Step B：只比較有報告的效能與成本欄位，百分比差異區分 percentage points 與 relative percent；缺值寫未報告。
 Step C：檢查 split、pretraining、外部資料、硬體、統計與消融；最大下降只能稱「在所測設定中最敏感」，不得宣稱因果核心。每筆結果以 evidenceIds 連到 evidence，短摘錄需出自本頁。若頁面沒有可可靠抽取的表格，保留空的 columns／rows／observations，並在 limitations 說明需人工核對。
 頁面文字：${wrapUntrusted('target-page-text', pageText)}`
-}
-
-export function roiPrompt(pageIndex: number, instruction: string) {
-  return `分析 PDF page index ${pageIndex} 上使用者圈選的影像區域。${instruction || '辨識其 Figure/Table 標號、內容、主要數值與需要人工核對的限制。'} 不清楚的內容明確寫「無法辨識」，不得補造。以簡潔繁體中文回答。`
 }

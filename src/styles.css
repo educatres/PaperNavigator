@@ -147,6 +147,9 @@ textarea { resize: vertical; min-height: 72px; }
 .tabbar button { min-width: max-content; padding: 0 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #6c797b; cursor: pointer; font-size: calc(16.5px * var(--font-scale)); line-height: 1.25; }
 .tabbar button small { margin-left: 4px; color: #a3a9a8; font: calc(8px * var(--font-scale)) 'DM Mono', monospace; }
 .tabbar button.active { color: var(--ink); border-bottom-color: var(--accent); background: #fff; font-weight: 600; }
+.tabbar .note-trigger { border-right: 1px solid var(--line); color: #315f58; }
+.tabbar .note-trigger::before { content: '✎'; margin-right: 5px; }
+.tabbar .note-trigger:disabled { color: #a3aaa8; cursor: not-allowed; }
 .content-scroll { flex: 1; overflow-y: auto; padding: 22px clamp(16px, 3vw, 34px) 60px; }
 .paper-title-row { padding-bottom: 18px; margin-bottom: 20px; border-bottom: 1px solid var(--line); }
 .paper-title-row h1 { max-width: 740px; margin: 4px 0 5px; font-size: clamp(24px, 2.4vw, 34px); line-height: 1.13; }
@@ -299,12 +302,15 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .reference-list strong { color: #33464e; font-size: calc(10px * var(--font-scale)); }
 .reference-list p { margin: 2px 0 0; font-size: var(--reference-font-size); }
 
-.note-input { min-height: 120px; }
-.note-actions { justify-content: flex-end; gap: 7px; margin-top: 7px; }
-.note-actions select { width: auto; margin: 0; }
-.notes-list { display: grid; gap: 7px; margin-top: 15px; }
-.notes-list article { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 11px; background: #f7f5ef; }
-.notes-list p { margin: 0; }
+.floating-note { position: fixed; z-index: 45; display: flex; flex-direction: column; min-width: 280px; min-height: 180px; border: 1px solid #b6aaa0; border-radius: 8px; background: #fff9cf; box-shadow: 0 14px 42px rgba(31,43,45,.28); overflow: hidden; }
+.floating-note-heading { min-height: 42px; display: flex; align-items: center; gap: 8px; padding: 8px 9px 8px 13px; background: #f0d982; color: #4e4528; cursor: move; user-select: none; touch-action: none; }
+.floating-note-heading strong { font-size: calc(13px * var(--font-scale)); }
+.floating-note-heading span { flex: 1; color: #75683f; font-size: var(--reference-font-size); }
+.floating-note-heading button { width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #655a38; cursor: pointer; font-size: 20px; }
+.floating-note-heading button:hover { background: rgba(255,255,255,.45); }
+.floating-note textarea { flex: 1; min-height: 0; margin: 0; padding: 13px; border: 0; border-radius: 0; outline: none; resize: none; background: #fff9cf; color: #3e3b2e; font: calc(13px * var(--font-scale))/1.65 'Noto Sans TC', sans-serif; }
+.floating-note-save-state { padding: 7px 13px; color: #7c7048; background: #fff5bd; font-size: var(--reference-font-size); }
+.floating-note-resizer { position: absolute; right: 0; bottom: 0; width: 25px; height: 25px; padding: 0; border: 0; background: linear-gradient(135deg, transparent 0 45%, #a18d49 46% 53%, transparent 54% 64%, #a18d49 65% 72%, transparent 73%); cursor: nwse-resize; touch-action: none; }
 .pass3-text-output { margin: 0; padding: 18px; white-space: pre-wrap; overflow-wrap: anywhere; background: #fff; color: #111; font: calc(14px * var(--font-scale)) / 1.8 'Noto Serif TC', Georgia, serif; }
 .pass3-text-card { background: #fff; color: #111; }
 .pass3-report-subsection { margin-top: 2px; border: 1px solid #e5e7eb; background: #fff; }
@@ -335,9 +341,6 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .annotation-color.green { background: #57be89; }
 .annotation-color.pink { background: #ea7da0; }
 .annotation-color.blue { background: #99ccee; }
-.note-state { padding: 3px 6px; color: #755b27; background: #fff0c9; font-size: calc(8px * var(--font-scale)); }
-.note-state.checked { color: #2d695e; background: #e1f1ec; }
-.note-state.concern { color: #914434; background: #f7e3dd; }
 .export-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .export-grid button { padding: 15px; border: 1px solid #d9d5cd; background: #faf9f5; text-align: left; cursor: pointer; }
 .export-grid button:hover { border-color: var(--accent); }
@@ -366,13 +369,11 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-viewport.mode-pan.panning { cursor: grabbing; }
 .pdf-loading { padding: 28px; color: #657376; font-size: calc(11px * var(--font-scale)); }
 .pdf-viewport.mode-highlight, .pdf-viewport.mode-highlight .pdf-text-layer span { cursor: default; }
-.pdf-viewport.mode-roi { cursor: crosshair; }
 .pdf-document-stage { display: grid; justify-items: center; gap: 18px; min-width: 100%; }
 .pdf-page-shell { position: relative; display: inline-block; max-width: none; padding: 18px 12px 12px; background: rgba(255,255,255,.16); }
 .pdf-page-label { position: absolute; top: 3px; left: 12px; color: #657376; font: var(--reference-font-size) 'DM Mono', monospace; }
 .pdf-page-content { position: relative; line-height: 0; }
 .pdf-canvas-stage { position: relative; display: inline-block; line-height: 0; }
-.pdf-viewport.mode-roi .pdf-canvas-stage { touch-action: none; }
 .pdf-viewport canvas { display: block; margin: 0 auto; background: #fff; box-shadow: 0 4px 18px rgba(21,31,34,.2); }
 .pdf-text-layer { --total-scale-factor: 1; --min-font-size: 1; --min-font-size-inv: calc(1 / var(--min-font-size)); position: absolute; inset: 0; z-index: 2; overflow: hidden; line-height: 1; text-align: initial; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; user-select: none; }
 .pdf-text-layer span, .pdf-text-layer br { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0 0; }
@@ -380,14 +381,12 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-text-layer > :not(.markedContent), .pdf-text-layer .markedContent span:not(.markedContent) { z-index: 1; --font-height: 0; font-size: calc(var(--total-scale-factor) * var(--font-height)); --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
 .pdf-viewport.mode-highlight .pdf-text-layer, .pdf-viewport.mode-highlight .pdf-text-layer span { user-select: text; }
 .pdf-viewport.mode-highlight .pdf-text-layer ::selection { background: rgba(90, 150, 220, .32); }
-.roi-selection { position: absolute; z-index: 4; border: 2px solid var(--accent); background: rgba(214,104,72,.15); pointer-events: none; }
 .pdf-highlight { position: absolute; z-index: 3; min-width: 5px; min-height: 5px; padding: 0; border: 0; border-radius: 2px; mix-blend-mode: multiply; pointer-events: none; }
 .pdf-highlight.erase-ready { z-index: 5; pointer-events: auto; cursor: not-allowed; }
 .pdf-highlight.erase-ready:hover { outline: 2px solid #b44031; outline-offset: 1px; }
 .pdf-annotation-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border-top: 1px solid #bbb8b1; background: #fff8d9; }
 .pdf-annotation-actions p { margin: 0; color: #675e3b; font-size: var(--reference-font-size); }
 .pdf-annotation-actions.erase-hint { background: #f8e8e3; }
-.roi-page-actions { position: absolute; right: 10px; bottom: 10px; z-index: 7; max-width: 280px; padding: 7px; background: rgba(238,236,230,.95); box-shadow: 0 4px 12px rgba(21,31,34,.18); }
 .pdf-viewport.mode-erase,
 .pdf-viewport.mode-erase .pdf-text-layer,
 .pdf-viewport.mode-erase .pdf-text-layer span,
@@ -397,9 +396,6 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .highlight-palette { display: flex; gap: 6px; }
 .highlight-palette button { width: 24px; height: 24px; padding: 0; border: 2px solid rgba(51,62,65,.2); border-radius: 50%; cursor: pointer; }
 .highlight-palette button.active { border-color: var(--ink); box-shadow: 0 0 0 2px #fff; }
-.roi-actions { padding: 10px; border-top: 1px solid #bbb8b1; background: #eeece6; }
-.roi-actions p { margin: 0 0 7px; color: #657376; font-size: var(--reference-font-size); }
-.roi-result { max-height: 150px; overflow-y: auto; margin-top: 8px; padding: 9px; background: #fff; color: #42545b; font-size: calc(10px * var(--font-scale)); line-height: 1.6; white-space: pre-wrap; }
 .highlight-record { grid-template-columns: auto 1fr; align-items: start; }
 .annotation-copy { min-width: 0; }
 .annotation-copy p { line-height: 1.55; }

@@ -64,8 +64,8 @@ export async function analyzePass2(config: ProviderConfig, document: PdfDocument
   return { ...response, result }
 }
 
-export async function analyzePass3(config: ProviderConfig, pass1: Pass1Result, pass2: Pass2Result, notes: UserNote[], highlights: PdfHighlight[], userPlan: string, signal?: AbortSignal) {
-  const response = await generateText(config, pass3Prompt(pass1, pass2, userPlan, notes, highlights), signal)
+export async function analyzePass3(config: ProviderConfig, pass1: Pass1Result, pass2: Pass2Result, notes: UserNote[], highlights: PdfHighlight[], userPlan: string, floatingNote: string, signal?: AbortSignal) {
+  const response = await generateText(config, pass3Prompt(pass1, pass2, userPlan, notes, highlights, floatingNote), signal)
   const text = response.text.trim()
   if (!text) throw new Error('第三遍沒有回傳可保存的文字。')
   return { text, usage: response.usage, rawText: response.text }

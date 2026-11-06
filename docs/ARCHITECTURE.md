@@ -6,7 +6,7 @@
 React UI
   ├─ PDF Viewer / continuous pages / zoom / text selection / persistent highlights
   ├─ Reading passes / Compare
-  └─ Notes / Citation / Export
+  └─ Floating note / Highlights / Citation / Export
           ↓
 Analysis Orchestrator
   ├─ Prompt version
@@ -31,12 +31,12 @@ UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，�
 3. 使用者明確選擇後才執行 Pass 2；產生方法、圖表索引、evidence、observations 與 references。
 4. Pass 3 只在 Pass 2 後執行；輸出重建狀態、假設、威脅與可驗證研究題目。
 5. PDF 檢視器連續渲染所有頁面，捲動時更新目前頁碼；同次文字選取只保存一筆螢光記錄與第一個版面區塊。
-6. 第三遍只使用第一遍、第二遍、筆記與螢光重點，不重新傳送 PDF 全文；使用者可隨新增標記再次執行。
+6. 第三遍只使用第一遍、第二遍、浮動純文字筆記與螢光重點，不重新傳送 PDF 全文；使用者可隨筆記或標記更新再次執行。
 7. 比較工作台只使用已保存的 observations；篩選不觸發 AI。
 
 ## Provider 差異
 
-Google 模式保留 PDF 的視覺、版面與圖表資訊，使用原生 `generateContent` 的 `inlineData` 與 `responseJsonSchema`。CGU Gateway 提供 OpenAI-compatible 文字端點，一般分析由 PDF.js 抽取帶頁碼文字；使用 AI 圈選摘要時才會傳送使用者圈選的 PNG，摘要與文字標記會保存到「筆記與匯出」。
+Google 模式保留 PDF 的視覺、版面與圖表資訊，使用原生 `generateContent` 的 `inlineData` 與 `responseJsonSchema`。CGU Gateway 提供 OpenAI-compatible 文字端點，一般分析由 PDF.js 抽取帶頁碼文字；文字標記、摘要與翻譯會保存到「重點標記」。
 
 ## 快取與檔案生命週期
 
