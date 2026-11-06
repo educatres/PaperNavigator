@@ -1,21 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ChangeEvent, Dispatch, SetStateAction } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { PdfViewer } from './components/pdf/PdfViewer'
 import type { AiRegionSummary, AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
-import { comparisonRows, compareRows } from './domain/comparison'
-import type { ComparisonRow } from './domain/comparison'
 import { analyzePass1, analyzePass2, analyzePass3 } from './ai/orchestrator/analysis'
 import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
 import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, PASS3_PROMPT_VERSION, roiPrompt } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
 import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
-import { exportBibTeX, exportComparisonCsv, exportPaperMarkdown, exportPass3Html, exportProjectJson, exportRis, importProjectJson } from './storage/exports'
+import { exportPaperMarkdown, exportPass3Html, exportProjectJson, importProjectJson } from './storage/exports'
 import { markdownToHtml, richTextToHtml } from './lib/richText'
 import { clearAllSettings, readActiveProvider, readProviderConfig, saveProviderConfig } from './storage/apiKeyStore'
-import { coCitationRows, verifyCitation } from './research/citations'
 
-type TabId = 'overview' | 'pass1' | 'pass2' | 'pass3' | 'compare' | 'research' | 'notes'
+type TabId = 'overview' | 'pass1' | 'pass2' | 'pass3' | 'notes'
 
 const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'overview', label: '總覽' },
@@ -23,8 +20,6 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: 'pass2', label: '第二遍' },
   { id: 'notes', label: '筆記與重點標記' },
   { id: 'pass3', label: '第三遍' },
-  { id: 'compare', label: '跨篇比較' },
-  { id: 'research', label: '研究延伸' },
 ]
 
 function emptyBundle(): ProjectBundle {
@@ -102,6 +97,16 @@ function BusyOverlay({ message, onCancel }: { message: string; onCancel?: () => 
   </div>
 }
 
+function ExportDialog({ canExportMarkdown, onMarkdown, onJson, onClear, onClose }: { canExportMarkdown: boolean; onMarkdown: () => void; onJson: () => void; onClear: () => void; onClose: () => void }) {
+  return <div className="export-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose() }}>
+    <section className="export-dialog" role="dialog" aria-modal="true" aria-labelledby="export-dialog-title">
+      <div className="export-dialog-heading"><div><span className="eyebrow">PROJECT DATA</span><h2 id="export-dialog-title">匯出與資料管理</h2></div><button className="icon-button" onClick={onClose} aria-label="關閉匯出與資料管理">×</button></div>
+      <div className="export-grid"><button disabled={!canExportMarkdown} onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>{canExportMarkdown ? '目前論文的三遍分析、證據、標記與 AI 摘要' : '請先從論文書架選擇一篇論文'}</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>會一併刪除瀏覽器內保存的 PDF 原檔</span></button></div>
+      <p className="fine-print">所有匯出均排除 API Key 與 PDF 原檔。</p>
+    </section>
+  </div>
+}
+
 export default function App() {
   const [bundle, setBundle] = useState<ProjectBundle>(emptyBundle)
   const [hydrated, setHydrated] = useState(false)
@@ -109,6 +114,17 @@ export default function App() {
   const [selectedId, setSelectedId] = useState('')
   const [tab, setTab] = useState<TabId>('overview')
   const [pageIndex, setPageIndex] = useState(0)
+  const [exportsOpen, setExportsOpen] = useState(false)
+  const [libraryCollapsed, setLibraryCollapsed] = useState(() => {
+    try { return window.localStorage.getItem('papernavigator.library-collapsed') === 'yes' }
+    catch { return false }
+  })
+  const [pdfPanelWidth, setPdfPanelWidth] = useState<number | null>(() => {
+    try {
+      const saved = Number(window.localStorage.getItem('papernavigator.pdf-panel-width'))
+      return Number.isFinite(saved) && saved >= 330 ? saved : null
+    } catch { return null }
+  })
   const [headerVisible, setHeaderVisible] = useState(() => {
     try { return window.localStorage.getItem('papernavigator.header-hidden') !== 'yes' }
     catch { return true }
@@ -131,8 +147,6 @@ export default function App() {
   const [userPlan, setUserPlan] = useState('')
   const [noteText, setNoteText] = useState('')
   const [noteVerification, setNoteVerification] = useState<'checked' | 'pending' | 'concern'>('pending')
-  const [compareIds, setCompareIds] = useState<string[]>([])
-  const [compareQuery, setCompareQuery] = useState({ task: '', dataset: '', metric: '' })
   const fileRef = useRef<HTMLInputElement | null>(null)
   const importRef = useRef<HTMLInputElement | null>(null)
   const reattachRef = useRef<HTMLInputElement | null>(null)
@@ -147,7 +161,6 @@ export default function App() {
         setBundle(saved)
         setDocuments(restored)
         setSelectedId(saved.papers[0]?.id ?? '')
-        setCompareIds(saved.papers.map((paper) => paper.id))
         const restoredCount = Object.keys(restored).length
         setMessage(saved.papers.length ? `已載入本機專案與 ${restoredCount} 份 PDF 原檔。` : '先匯入一篇 PDF，再測試模型連線。')
       } catch {
@@ -172,22 +185,35 @@ export default function App() {
   }, [headerVisible])
 
   useEffect(() => {
+    try { window.localStorage.setItem('papernavigator.library-collapsed', libraryCollapsed ? 'yes' : 'no') }
+    catch { /* The shelf still works when browser storage is unavailable. */ }
+  }, [libraryCollapsed])
+
+  useEffect(() => {
+    try {
+      if (pdfPanelWidth === null) window.localStorage.removeItem('papernavigator.pdf-panel-width')
+      else window.localStorage.setItem('papernavigator.pdf-panel-width', String(pdfPanelWidth))
+    } catch { /* The adjustable columns still work when browser storage is unavailable. */ }
+  }, [pdfPanelWidth])
+
+  useEffect(() => {
+    if (!exportsOpen) return
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setExportsOpen(false) }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [exportsOpen])
+
+  useEffect(() => {
     try { window.localStorage.setItem('papernavigator.settings-open', settingsOpen ? 'yes' : 'no') }
     catch { /* The panel still works when browser storage is unavailable. */ }
   }, [settingsOpen])
 
   useEffect(() => {
     if (!selectedId && bundle.papers[0]) setSelectedId(bundle.papers[0].id)
-    setCompareIds((current) => current.filter((id) => bundle.papers.some((paper) => paper.id === id)))
   }, [bundle.papers, selectedId])
 
   const selectedPaper = bundle.papers.find((paper) => paper.id === selectedId) ?? null
   const selectedDocument = selectedId ? documents[selectedId] ?? null : null
-  const selectedComparePapers = bundle.papers.filter((paper) => compareIds.includes(paper.id))
-  const rows = useMemo(() => comparisonRows(selectedComparePapers, compareQuery), [selectedComparePapers, compareQuery])
-  const comparison = useMemo(() => compareRows(rows), [rows])
-  const coCitations = useMemo(() => coCitationRows(bundle.papers), [bundle.papers])
-
   const updateBundle = (transform: (current: ProjectBundle) => ProjectBundle) => setBundle((current) => {
     const next = transform(current)
     return { ...next, project: { ...next.project, updatedAt: new Date().toISOString(), paperIds: next.papers.map((paper) => paper.id) } }
@@ -246,7 +272,6 @@ export default function App() {
         updateBundle((current) => ({ ...current, papers: [...current.papers, ...nextPapers] }))
         setDocuments((current) => ({ ...current, ...nextDocuments }))
         setSelectedId(nextPapers[0].id)
-        setCompareIds((current) => [...new Set([...current, ...nextPapers.map((paper) => paper.id)])])
         setPageIndex(0)
         setMessage(`已匯入 ${nextPapers.length} 篇 PDF；原檔已保存在此瀏覽器。`)
       }
@@ -436,22 +461,9 @@ export default function App() {
       setBundle(imported)
       setDocuments({})
       setSelectedId(imported.papers[0]?.id ?? '')
-      setCompareIds(imported.papers.map((paper) => paper.id))
       setMessage('專案已回復；JSON 備份不含 PDF 原檔，請逐篇重新附上。')
     } catch (value) { reportError(value) }
     finally { event.target.value = '' }
-  }
-
-  const verifyReference = async (paperId: string, citationId: string) => {
-    setBusy('正在向 Crossref 核對 DOI')
-    try {
-      const paper = bundle.papers.find((item) => item.id === paperId)!
-      const citation = paper.citations.find((item) => item.id === citationId)!
-      const verified = await verifyCitation(citation)
-      updatePaper(paperId, (item) => ({ ...item, citations: item.citations.map((row) => row.id === citationId ? verified : row) }))
-      setMessage('引用已透過 Crossref DOI 紀錄核對。')
-    } catch (value) { reportError(value) }
-    finally { setBusy('') }
   }
 
   const shareProject = async () => {
@@ -462,7 +474,51 @@ export default function App() {
     } catch (value) { if ((value as Error).name !== 'AbortError') reportError(value) }
   }
 
-  return <div className={headerVisible ? 'app-shell' : 'app-shell header-collapsed'}>
+  const clearProject = () => {
+    if (!window.confirm('清除瀏覽器中的整個專案？請先匯出 JSON 備份。')) return
+    void clearBundle().then(() => {
+      setBundle(emptyBundle())
+      setDocuments({})
+      setSelectedId('')
+      setExportsOpen(false)
+      setMessage('本機專案已清除。')
+    }).catch(reportError)
+  }
+
+  const clampPdfPanelWidth = (value: number) => {
+    const libraryWidth = libraryCollapsed ? 44 : window.innerWidth <= 1180 ? 210 : 230
+    const maximum = Math.max(330, window.innerWidth - libraryWidth - 428)
+    return Math.min(Math.max(value, 330), maximum)
+  }
+
+  const beginPdfResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (window.matchMedia('(max-width: 900px)').matches || event.button !== 0) return
+    event.preventDefault()
+    const onMove = (moveEvent: PointerEvent) => {
+      setPdfPanelWidth(clampPdfPanelWidth(window.innerWidth - moveEvent.clientX))
+    }
+    const finish = () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      document.body.classList.remove('is-resizing-panels')
+    }
+    document.body.classList.add('is-resizing-panels')
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', finish, { once: true })
+    window.addEventListener('pointercancel', finish, { once: true })
+  }
+
+  const resizePdfWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
+    event.preventDefault()
+    const direction = event.key === 'ArrowLeft' ? 1 : -1
+    setPdfPanelWidth((current) => clampPdfPanelWidth((current ?? window.innerWidth * .39) + direction * 24))
+  }
+
+  const appClassName = [headerVisible ? 'app-shell' : 'app-shell header-collapsed', libraryCollapsed ? 'library-collapsed' : ''].filter(Boolean).join(' ')
+  const workspaceStyle = pdfPanelWidth ? { '--pdf-panel-width': `${clampPdfPanelWidth(pdfPanelWidth)}px` } as React.CSSProperties : undefined
+  return <div className={appClassName}>
     {headerVisible && <header className="topbar">
       <div className="brand-block">
         <div className="brand-mark">PN</div>
@@ -472,7 +528,7 @@ export default function App() {
         <span className={navigator.onLine ? 'online-state' : 'online-state offline'}>{navigator.onLine ? '● 線上' : '● 離線'}</span>
         <button className="ghost-button" onClick={() => setHeaderVisible(false)}>隱藏標題列</button>
         <button className="ghost-button" onClick={() => setSettingsOpen((value) => !value)}>模型 / Key</button>
-        <button className="ghost-button" onClick={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })}>備份 JSON</button>
+        <button className="ghost-button" onClick={() => setExportsOpen(true)}>匯出與資料管理</button>
         <button className="primary-button compact" onClick={() => fileRef.current?.click()}>＋ 上傳 PDF</button>
         <input ref={fileRef} hidden type="file" accept="application/pdf,.pdf" multiple onChange={(event) => void importPdfs([...event.target.files ?? []])} />
       </div>
@@ -510,15 +566,16 @@ export default function App() {
     </div>
     {error && <div className="error-banner"><strong>需要處理</strong><span>{error}</span><button onClick={() => setError('')}>×</button></div>}
     {busy && <BusyOverlay message={busy} onCancel={abortRef.current ? () => abortRef.current?.abort() : undefined} />}
+    {exportsOpen && <ExportDialog canExportMarkdown={Boolean(selectedPaper)} onMarkdown={() => selectedPaper && exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={clearProject} onClose={() => setExportsOpen(false)} />}
 
-    <main className="workspace-layout">
+    <main className="workspace-layout" style={workspaceStyle}>
       <aside className="library-panel">
         <div className="project-editor">
           <span className="eyebrow">RESEARCH PROJECT</span>
           <input className="project-name" value={bundle.project.name} onChange={(event) => updateBundle((current) => ({ ...current, project: { ...current.project, name: event.target.value } }))} aria-label="專案名稱" />
           <textarea value={bundle.project.researchQuestion} onChange={(event) => updateBundle((current) => ({ ...current, project: { ...current.project, researchQuestion: event.target.value } }))} placeholder="輸入你的研究問題（選填）" aria-label="研究問題" />
         </div>
-        <div className="library-heading"><span>論文書架</span><span>{bundle.papers.length} / 10</span></div>
+        <div className="library-heading"><span>論文書架</span><span>{bundle.papers.length} / 10</span><button className="library-toggle" onClick={() => setLibraryCollapsed((value) => !value)} aria-label={libraryCollapsed ? '展開論文書架' : '收起論文書架'} title={libraryCollapsed ? '展開論文書架' : '收起論文書架'}>{libraryCollapsed ? '»' : '«'}</button></div>
         <div className="paper-list">
           {bundle.papers.map((paper) => <div key={paper.id} className={paper.id === selectedId ? 'paper-item selected' : 'paper-item'}>
             <button type="button" className="paper-select" onClick={() => { setSelectedId(paper.id); setPageIndex(0); setTab('overview') }}>
@@ -545,11 +602,10 @@ export default function App() {
           {tab === 'pass1' && <Pass1View paper={selectedPaper} onRun={runPass1} onEvidence={jumpToEvidence} />}
           {tab === 'pass2' && <Pass2View paper={selectedPaper} onRun={runPass2} onEvidence={jumpToEvidence} onJump={(page) => page !== null && setPageIndex(page)} />}
           {tab === 'pass3' && <Pass3View paper={selectedPaper} userPlan={userPlan} setUserPlan={setUserPlan} onRun={runPass3} onClear={() => updatePaper(selectedPaper.id, (paper) => ({ ...paper, pass3: undefined, pass3Text: undefined }))} />}
-          {tab === 'compare' && <CompareView papers={bundle.papers} selectedIds={compareIds} setSelectedIds={setCompareIds} query={compareQuery} setQuery={setCompareQuery} rows={rows} comparison={comparison} onExport={() => exportComparisonCsv(selectedComparePapers)} onSelectPaper={(id: string, page: number | null) => { setSelectedId(id); setPageIndex(page ?? 0) }} />}
-          {tab === 'research' && <ResearchView papers={bundle.papers} coCitations={coCitations} onVerify={(paperId: string, citationId: string) => void verifyReference(paperId, citationId)} onBib={() => exportBibTeX(bundle.papers)} onRis={() => exportRis(bundle.papers)} />}
-          {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onDeleteHighlight={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))} onDeleteHighlightOutput={(id: string, output: 'aiSummary' | 'translation') => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((highlight) => highlight.id === id ? { ...highlight, [output]: undefined } : highlight) }))} onDeleteAiSummary={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: (paper.aiRegionSummaries ?? []).filter((summary) => summary.id !== id) }))} onHighlightAction={runHighlightTextAction} onChangeHighlightColor={updateHighlightColor} onJump={setPageIndex} onMarkdown={() => exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={() => { if (window.confirm('清除瀏覽器中的整個專案？請先匯出 JSON 備份。')) void clearBundle().then(() => { setBundle(emptyBundle()); setDocuments({}); setSelectedId('') }) }} />}
+          {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onDeleteHighlight={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))} onDeleteHighlightOutput={(id: string, output: 'aiSummary' | 'translation') => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((highlight) => highlight.id === id ? { ...highlight, [output]: undefined } : highlight) }))} onDeleteAiSummary={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: (paper.aiRegionSummaries ?? []).filter((summary) => summary.id !== id) }))} onHighlightAction={runHighlightTextAction} onChangeHighlightColor={updateHighlightColor} onJump={setPageIndex} />}
         </div>}
       </section>
+      <div className="panel-resizer" role="separator" aria-label="調整閱讀內容與 PDF 欄寬" aria-orientation="vertical" tabIndex={0} onPointerDown={beginPdfResize} onKeyDown={resizePdfWithKeyboard} onDoubleClick={() => setPdfPanelWidth(null)} />
       <PdfViewer
         document={selectedDocument}
         paperId={selectedPaper?.id ?? ''}
@@ -596,39 +652,11 @@ function Pass2View({ paper, onRun, onEvidence, onJump }: { paper: Paper; onRun: 
 function Pass3View({ paper, userPlan, setUserPlan, onRun, onClear }: { paper: Paper; userPlan: string; setUserPlan: (value: string) => void; onRun: () => void; onClear: () => void }) {
   const text = paper.pass3Text?.trim()
   const data = paper.pass3
-  return <div className="section-stack"><section className="analysis-control pass3-control"><div><span className="eyebrow">VIRTUAL RECONSTRUCTION</span><h2>第三遍：重建與批判</h2><p>根據第一遍、第二遍、筆記與螢光重點重新分析；不重新讀取全文，直接產生 HTML 閱讀報告。</p></div><div className="reimplementation"><label>如果由我重新實作，我會怎麼做？<textarea value={userPlan} onChange={(event) => setUserPlan(event.target.value)} placeholder="先寫下自己的方案，再與 AI 建議並列…" /></label><div className="reimplementation-actions"><button className="secondary-button" disabled title="全文重讀功能尚未開放">全文重讀（尚未開放）</button><button className="primary-button" disabled={!paper.pass2} onClick={onRun}>{text || data ? '依最新筆記與螢光重點重新分析' : '產生第三遍 HTML 報告'}</button></div></div></section>{text ? <section className="content-card pass3-text-card"><div className="section-title"><div><span className="eyebrow">HTML / MARKDOWN REPORT</span><h2>第三遍閱讀報告</h2></div><div className="pass3-report-actions"><button className="small-button" onClick={() => exportPass3Html(paper, text)}>下載 .html</button><button className="small-button danger-button" onClick={onClear}>清除閱讀報告</button></div></div><div className="pass3-rich-output" dangerouslySetInnerHTML={{ __html: richTextToHtml(text) }} /></section> : data ? <><section className="content-card"><div className="section-title"><h2>重建程序</h2><button className="small-button danger-button" onClick={onClear}>清除閱讀報告</button></div><div className="reconstruction-list">{data.reconstruction.map((item, index) => <article key={`${item.step}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><h3>{item.step}<i className={`recon-status ${item.status}`}>{item.status}</i></h3><p>{item.detail}</p></div></article>)}</div></section><div className="two-column"><CriticalList title="隱藏假設" items={data.assumptions} /><CriticalList title="效度威脅" items={data.threats} /><CriticalList title="可重現風險" items={data.reproducibilityRisks} /></div><section><div className="section-title"><div><span className="eyebrow">AI-GENERATED, TESTABLE</span><h2>後續研究題目</h2></div></div><div className="idea-grid">{data.researchIdeas.map((item, index) => <article key={item.question}><span>IDEA {index + 1}</span><h3>{item.question}</h3><p><b>動機：</b>{item.motivation}</p><p><b>假設：</b>{item.hypothesis}</p><p><b>最小實驗：</b>{item.minimumExperiment}</p><p><b>資料／指標：</b>{item.requiredData} · {item.metric}</p></article>)}</div></section></> : <EmptyAnalysis title="尚未進入第三遍" text="先完成第二遍，並寫下自己的重建思路。" />}</div>
+  return <div className="section-stack"><section className="analysis-control pass3-control"><div><span className="eyebrow">VIRTUAL RECONSTRUCTION</span><h2>第三遍：重建與批判</h2><p>根據第一遍、第二遍、筆記與螢光重點重新分析；不重新讀取全文，直接產生 HTML 閱讀報告。</p></div><div className="reimplementation"><label>如果由我重新實作，我會怎麼做？<textarea value={userPlan} onChange={(event) => setUserPlan(event.target.value)} placeholder="先寫下自己的方案，再與 AI 建議並列…" /></label><div className="reimplementation-actions"><button className="secondary-button" disabled title="全文重讀功能尚未開放">全文重讀（尚未開放）</button><button className="primary-button" disabled={!paper.pass2} onClick={onRun}>{text || data ? '依最新筆記與螢光重點重新分析' : '產生第三遍 HTML 報告'}</button></div></div></section>{text ? <section className="content-card pass3-text-card"><div className="section-title"><div><span className="eyebrow">HTML / MARKDOWN REPORT</span><h2>第三遍閱讀報告</h2></div><div className="pass3-report-actions"><button className="small-button" onClick={() => exportPass3Html(paper, text)}>下載 .html</button><button className="small-button danger-button" onClick={onClear}>清除閱讀報告</button></div></div><section className="pass3-report-subsection"><div className="pass3-report-subsection-heading"><span className="eyebrow">READING REPORT</span><h3>閱讀報告</h3></div><div className="pass3-rich-output" dangerouslySetInnerHTML={{ __html: richTextToHtml(text) }} /></section></section> : data ? <><section className="content-card"><div className="section-title"><h2>重建程序</h2><button className="small-button danger-button" onClick={onClear}>清除閱讀報告</button></div><div className="reconstruction-list">{data.reconstruction.map((item, index) => <article key={`${item.step}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><h3>{item.step}<i className={`recon-status ${item.status}`}>{item.status}</i></h3><p>{item.detail}</p></div></article>)}</div></section><div className="two-column"><CriticalList title="隱藏假設" items={data.assumptions} /><CriticalList title="效度威脅" items={data.threats} /><CriticalList title="可重現風險" items={data.reproducibilityRisks} /></div><section><div className="section-title"><div><span className="eyebrow">AI-GENERATED, TESTABLE</span><h2>後續研究題目</h2></div></div><div className="idea-grid">{data.researchIdeas.map((item, index) => <article key={item.question}><span>IDEA {index + 1}</span><h3>{item.question}</h3><p><b>動機：</b>{item.motivation}</p><p><b>假設：</b>{item.hypothesis}</p><p><b>最小實驗：</b>{item.minimumExperiment}</p><p><b>資料／指標：</b>{item.requiredData} · {item.metric}</p></article>)}</div></section></> : <EmptyAnalysis title="尚未進入第三遍" text="先完成第二遍，並寫下自己的重建思路。" />}</div>
 }
 
 function CriticalList({ title, items }: { title: string; items: Array<{ title: string; assessment: string; status: string }> }) {
   return <section className="content-card"><h2>{title}</h2><div className="critical-list">{items.map((item) => <article key={item.title}><strong>{item.title}</strong><span className={`status-pill ${item.status}`}>{item.status}</span><p>{item.assessment}</p></article>)}</div></section>
-}
-
-interface CompareViewProps {
-  papers: Paper[]
-  selectedIds: string[]
-  setSelectedIds: Dispatch<SetStateAction<string[]>>
-  query: { task: string; dataset: string; metric: string }
-  setQuery: Dispatch<SetStateAction<{ task: string; dataset: string; metric: string }>>
-  rows: ComparisonRow[]
-  comparison: ReturnType<typeof compareRows>
-  onExport: () => void
-  onSelectPaper: (id: string, page: number | null) => void
-}
-
-function CompareView({ papers, selectedIds, setSelectedIds, query, setQuery, rows, comparison, onExport, onSelectPaper }: CompareViewProps) {
-  return <div className="section-stack"><section className="analysis-control compare-control"><div><span className="eyebrow">FAIR COMPARISON</span><h2>跨篇比較工作台</h2><p>先核對 task、dataset、split、metric definition 與 protocol，再決定是否可排名。</p></div><button className="secondary-button" disabled={!rows.length} onClick={onExport}>匯出 CSV</button></section><div className="paper-selector">{papers.map((paper) => <label key={paper.id}><input type="checkbox" checked={selectedIds.includes(paper.id)} onChange={() => setSelectedIds((current) => current.includes(paper.id) ? current.filter((id) => id !== paper.id) : current.length < 10 ? [...current, paper.id] : current)} />{paper.title ?? paper.filename}</label>)}</div><div className="filter-row"><input value={query.task} onChange={(event) => setQuery({ ...query, task: event.target.value })} placeholder="篩選 task" /><input value={query.dataset} onChange={(event) => setQuery({ ...query, dataset: event.target.value })} placeholder="篩選 dataset" /><input value={query.metric} onChange={(event) => setQuery({ ...query, metric: event.target.value })} placeholder="篩選 metric" /></div><div className={comparison.globallyComparable ? 'comparison-notice comparable' : 'comparison-notice'}><strong>{comparison.globallyComparable ? '可在此分組直接比較' : '不顯示全體第一名'}</strong><span>{comparison.reason}</span></div><section className="content-card"><div className="data-table-wrap"><table className="comparison-table"><thead><tr><th>論文</th><th>方法／來源</th><th>Task</th><th>Dataset / Split</th><th>Metric</th><th>原始結果</th><th>Pretraining / Hardware</th><th>來源</th></tr></thead><tbody>{rows.map((row) => <tr key={`${row.paper.id}-${row.observation.id}`}><td>{row.paper.title ?? row.paper.filename}</td><td>{row.observation.methodName}<small>{row.observation.methodOrigin}</small></td><td>{row.observation.task}</td><td>{row.observation.dataset ?? '未報告'}<small>{row.observation.split ?? 'split 未報告'}</small></td><td>{row.observation.metricName}<small>{row.observation.metricDefinition ?? '定義未報告'}</small></td><td><strong>{row.observation.rawValue || '未報告'}</strong></td><td>{row.observation.pretrainedData ?? '未報告'}<small>{row.observation.hardware ?? '硬體未報告'}</small></td><td><button className="evidence-chip unverified" onClick={() => onSelectPaper(row.paper.id, null)}>查看</button></td></tr>)}</tbody></table>{!rows.length && <p className="table-empty">選取至少兩篇已完成第二遍分析的論文。</p>}</div></section>{comparison.pairs.length > 0 && <section className="content-card"><h2>成對公平性檢查</h2><div className="pair-list">{comparison.pairs.map((pair, index) => <article key={index}><span className={`comparability ${pair.assessment.label}`}>{pair.assessment.label}</span><strong>{pair.current.paper.title ?? pair.current.paper.filename} vs {pair.baseline.paper.title ?? pair.baseline.paper.filename}</strong><p>{pair.assessment.reasons.join('；')}</p>{pair.delta && <p>絕對差：{pair.delta.absolute.toFixed(4)}；相對變化：{pair.delta.relativePercent === null ? '基準為 0，無法計算' : `${pair.delta.relativePercent.toFixed(2)}%`}{pair.current.observation.unit === '%' ? `；percentage points：${pair.delta.absolute.toFixed(2)}` : ''}</p>}</article>)}</div></section>}</div>
-}
-
-interface ResearchViewProps {
-  papers: Paper[]
-  coCitations: ReturnType<typeof coCitationRows>
-  onVerify: (paperId: string, citationId: string) => void
-  onBib: () => void
-  onRis: () => void
-}
-
-function ResearchView({ papers, coCitations, onVerify, onBib, onRis }: ResearchViewProps) {
-  return <div className="section-stack"><section className="analysis-control"><div><span className="eyebrow">RESEARCH EXTENSIONS</span><h2>引用管理與共引線索</h2><p>從已上傳論文的 references 建立待驗證清單；有 DOI 時可向 Crossref 核對書目，但不把未上傳全文視為已讀。</p></div><div><button className="small-button" onClick={onBib}>BibTeX</button><button className="small-button" onClick={onRis}>RIS</button></div></section><section className="content-card"><h2>共引線索</h2><div className="citation-network">{coCitations.filter((item) => item.count >= 2).map((item) => <article key={item.citation.id}><span>{item.count} 篇共同引用</span><strong>{item.citation.title ?? item.citation.raw}</strong><small>{item.citation.authors.join('、')} {item.citation.year ?? ''}</small></article>)}{!coCitations.some((item) => item.count >= 2) && <p>目前尚未找到兩篇以上論文共同引用的條目。</p>}</div></section>{papers.map((paper) => <section className="content-card" key={paper.id}><h3>{paper.title ?? paper.filename}</h3><div className="reference-list">{paper.citations.map((citation) => <article key={citation.id}><div><strong>{citation.title ?? citation.raw}</strong><p>{citation.authors.join('、') || '作者待確認'} · {citation.year ?? '年份待確認'} · {citation.doi ?? '無 DOI'}</p></div><span className={`status-pill ${citation.verification}`}>{citation.verification === 'externally_verified' ? 'Crossref 已核對' : '本文引用／待驗證'}</span>{citation.doi && citation.verification !== 'externally_verified' && <button className="small-button" onClick={() => onVerify(paper.id, citation.id)}>核對 DOI</button>}</article>)}{!paper.citations.length && <p>完成第二遍後會在此列出 references。</p>}</div></section>)}</div>
 }
 
 interface NotesViewProps {
@@ -645,12 +673,9 @@ interface NotesViewProps {
   onHighlightAction: (id: string, action: 'summary' | 'translation') => void
   onChangeHighlightColor: (id: string, color: PdfHighlight['color']) => void
   onJump: (page: number) => void
-  onMarkdown: () => void
-  onJson: () => void
-  onClear: () => void
 }
 
-function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onDeleteHighlight, onDeleteHighlightOutput, onDeleteAiSummary, onHighlightAction, onChangeHighlightColor, onJump, onMarkdown, onJson, onClear }: NotesViewProps) {
+function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onDeleteHighlight, onDeleteHighlightOutput, onDeleteAiSummary, onHighlightAction, onChangeHighlightColor, onJump }: NotesViewProps) {
   const summaries = paper.aiRegionSummaries ?? []
   const colors: Array<{ id: PdfHighlight['color']; label: string }> = [{ id: 'yellow', label: '黃' }, { id: 'green', label: '綠' }, { id: 'pink', label: '粉紅' }, { id: 'blue', label: '淺藍' }]
   return <div className="section-stack">
@@ -682,7 +707,6 @@ function NotesView({ paper, text, setText, verification, setVerification, onAdd,
         {summaries.length ? summaries.map((summary) => <article key={summary.id}><p>{summary.summary}</p><button className="small-button" onClick={() => onJump(summary.pdfPageIndex)}>PDF p.{summary.pdfPageIndex + 1}</button><button className="danger-link" onClick={() => onDeleteAiSummary(summary.id)}>刪除</button></article>) : <p>尚未建立 AI 圈選摘要。</p>}
       </div>
     </section>
-    <section className="content-card"><h2>匯出與資料管理</h2><div className="export-grid"><button onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>單篇三遍分析、證據、標記與 AI 摘要</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>會一併刪除瀏覽器內保存的 PDF 原檔</span></button></div><p className="fine-print">所有匯出均排除 API Key 與 PDF 原檔。CSV 匯出會防止試算表公式注入。</p></section>
   </div>
 }
 

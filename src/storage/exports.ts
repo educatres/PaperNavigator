@@ -91,7 +91,7 @@ export function exportPaperMarkdown(paper: Paper) {
 export function pass3HtmlDocument(paper: Paper, text = paper.pass3Text ?? '') {
   const title = safeName(paper.title ?? paper.filename)
   const report = richTextToHtml(text)
-  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}－第三遍閱讀報告</title><style>body{max-width:960px;margin:40px auto;padding:0 24px;color:#293537;font:16px/1.75 system-ui,sans-serif}h1,h2,h3,h4{color:#244c50}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #ccd4d1;text-align:left}code{padding:2px 4px;background:#eef1ef}blockquote{margin-left:0;padding-left:16px;border-left:4px solid #83aaa3;color:#526166}</style></head><body><main>${report}</main></body></html>`
+  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}－第三遍閱讀報告</title><style>body{max-width:960px;margin:40px auto;padding:0 24px;background:#fff;color:#111;font:16px/1.75 system-ui,sans-serif}h1,h2,h3,h4{color:#111}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #ccd4d1;text-align:left}code{padding:2px 4px;background:#f3f4f6}blockquote{margin-left:0;padding-left:16px;border-left:4px solid #83aaa3;color:#111}</style></head><body><main>${report}</main></body></html>`
 }
 
 export function exportPass3Html(paper: Paper, text = paper.pass3Text ?? '') {

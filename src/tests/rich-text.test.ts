@@ -18,6 +18,13 @@ describe('rich report rendering', () => {
       .toBe('<h2>標題</h2><p><strong>內容</strong></p>')
   })
 
+  it('retains only a safe text color on highlighted report text', () => {
+    expect(richTextToHtml('<p><span style="color:#B42318; background:url(https://unsafe.invalid)">重點</span></p>'))
+      .toBe('<p><span style="color:#b42318">重點</span></p>')
+    expect(richTextToHtml('<p><span style="color:expression(alert(1))">不應執行</span></p>'))
+      .toBe('<p><span>不應執行</span></p>')
+  })
+
   it('escapes text from disallowed markup', () => {
     expect(sanitizeReportHtml('<p>1 & 2</p><custom>文字</custom>')).toBe('<p>1 &amp; 2</p>文字')
   })

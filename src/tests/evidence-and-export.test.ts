@@ -63,9 +63,10 @@ describe('third-pass HTML export', () => {
       id: 'p', projectId: 'project', sha256: 'hash', filename: 'p.pdf', title: 'Paper',
       authors: [], year: null, doi: null, pageCount: 1, size: 1, uploadTime: '', tableAnalyses: [], citations: [], evidence: [], notes: [], highlights: [], observations: [],
     } as Paper
-    const html = pass3HtmlDocument(paper, '<section><h2 onclick="bad()">重建</h2><script>bad()</script><p>內容</p></section>')
+    const html = pass3HtmlDocument(paper, '<section><h2 onclick="bad()">重建</h2><script>bad()</script><p><span style="color:#B42318">重點</span>內容</p></section>')
 
-    expect(html).toContain('<main><section><h2>重建</h2><p>內容</p></section></main>')
+    expect(html).toContain('<main><section><h2>重建</h2><p><span style="color:#b42318">重點</span>內容</p></section></main>')
+    expect(html).toContain('background:#fff;color:#111')
     expect(html).not.toContain('onclick')
     expect(html).not.toContain('<script>')
   })

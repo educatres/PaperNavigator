@@ -6,6 +6,17 @@ const ALLOWED_HTML_TAGS = new Set([
 
 const VOID_HTML_TAGS = new Set(['br', 'hr'])
 
+// Reports may use a small, safe set of CSS colors to call out key text. Keep
+// every other attribute and declaration out of model-generated HTML.
+const SAFE_COLOR = /^(?:#[\da-f]{3,8}|(?:black|white|red|orange|yellow|green|blue|purple|teal|gray|grey))$/i
+
+function safeSpanAttributes(token: string) {
+  const style = token.match(/\sstyle\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i)?.slice(1).find(Boolean)
+  if (!style) return ''
+  const color = style.match(/(?:^|;)\s*color\s*:\s*([^;]+?)\s*(?:;|$)/i)?.[1]?.trim()
+  return color && SAFE_COLOR.test(color) ? ` style="color:${color.toLowerCase()}"` : ''
+}
+
 function escapeHtml(value: string) {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
@@ -49,7 +60,10 @@ export function sanitizeReportHtml(value: string) {
     if (tag) {
       const closing = Boolean(tag[1])
       const name = tag[2].toLowerCase()
-      if (ALLOWED_HTML_TAGS.has(name)) result += closing && !VOID_HTML_TAGS.has(name) ? `</${name}>` : `<${name}>`
+      if (ALLOWED_HTML_TAGS.has(name)) {
+        if (closing && !VOID_HTML_TAGS.has(name)) result += `</${name}>`
+        else if (!closing) result += name === 'span' ? `<span${safeSpanAttributes(token)}>` : `<${name}>`
+      }
     }
     cursor = index + token.length
   }
@@ -63,6 +77,6 @@ function unwrapHtmlFence(value: string) {
 
 export function richTextToHtml(value: string) {
   const unwrapped = unwrapHtmlFence(value)
-  const containsHtml = /<(?:article|section|div|h[1-4]|p|ul|ol|li|table|blockquote|pre|strong|em|br|hr)\b[^>]*>/i.test(unwrapped)
+  const containsHtml = /<(?:article|section|div|span|h[1-4]|p|ul|ol|li|table|blockquote|pre|strong|em|br|hr)\b[^>]*>/i.test(unwrapped)
   return containsHtml ? sanitizeReportHtml(unwrapped) : markdownToHtml(value)
 }
