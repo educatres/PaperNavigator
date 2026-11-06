@@ -52,6 +52,8 @@ p { line-height: 1.7; }
 .header-restore { position: fixed; z-index: 40; top: 9px; right: 12px; min-height: 32px; padding: 6px 11px; border: 1px solid rgba(255,255,255,.3); border-radius: 5px; color: #fff; background: rgba(23,43,53,.9); box-shadow: 0 5px 18px rgba(18,33,39,.18); cursor: pointer; font-size: 11px; }
 .small-button { padding: 6px 9px; border: 1px solid #c9c6be; border-radius: 4px; color: #435259; background: #fff; font-size: 11px; white-space: nowrap; }
 .small-button:hover, .small-button.active { color: var(--accent-dark); border-color: var(--accent); }
+.small-button.danger-button { color: #913f31; border-color: #d7a99f; background: #fff7f4; }
+.small-button.danger-button:hover { color: #742d21; border-color: #a94b37; background: #fff0eb; }
 .small-button.full { width: 100%; padding: 9px; }
 .text-button, .danger-link { padding: 3px; color: #657376; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }
 .danger-link { color: #9d4a3a; }
@@ -288,10 +290,18 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pass3-text-output { margin: 0; padding: 18px; white-space: pre-wrap; overflow-wrap: anywhere; background: #f7f5ef; color: #293537; font: 14px/1.8 'Noto Serif TC', Georgia, serif; }
 .pass3-rich-output { padding: 18px; background: #f7f5ef; color: #293537; font: 14px/1.8 'Noto Serif TC', Georgia, serif; }
 .pass3-rich-output h1, .pass3-rich-output h2, .pass3-rich-output h3, .pass3-rich-output h4 { margin: 0 0 9px; color: #34464d; font-family: inherit; }
+.pass3-rich-output section + section { margin-top: 24px; padding-top: 20px; border-top: 1px solid #d9dedb; }
 .pass3-rich-output p { margin: 0 0 12px; }
 .pass3-rich-output ul, .pass3-rich-output ol { margin: 0 0 12px; padding-left: 24px; }
 .pass3-rich-output li { margin: 4px 0; }
 .pass3-rich-output code { padding: 2px 4px; background: #e8ece8; font-family: 'DM Mono', monospace; font-size: 12px; }
+.pass3-rich-output pre { overflow-x: auto; margin: 0 0 12px; padding: 12px; background: #e8ece8; }
+.pass3-rich-output pre code { padding: 0; }
+.pass3-rich-output blockquote { margin: 0 0 12px; padding-left: 14px; border-left: 3px solid #83aaa3; color: #526166; }
+.pass3-rich-output table { width: 100%; margin: 0 0 16px; border-collapse: collapse; font: 12px/1.55 'DM Mono', monospace; }
+.pass3-rich-output th, .pass3-rich-output td { padding: 7px 8px; border: 1px solid #ccd4d1; text-align: left; vertical-align: top; }
+.pass3-rich-output th { background: #e8ece8; color: #34464d; }
+.pass3-report-actions { display: flex; align-items: center; gap: 8px; }
 .annotation-summary { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
 .annotation-summary strong { padding: 6px 8px; color: #536368; background: #f1f0eb; font: 9px 'DM Mono', monospace; }
 .annotation-list { display: grid; gap: 7px; }

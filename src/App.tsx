@@ -7,10 +7,11 @@ import type { ComparisonRow } from './domain/comparison'
 import { analyzePass1, analyzePass2, analyzePass3 } from './ai/orchestrator/analysis'
 import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
-import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, roiPrompt } from './ai/prompts/prompts'
+import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, PASS3_PROMPT_VERSION, roiPrompt } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
 import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
-import { exportBibTeX, exportComparisonCsv, exportPaperMarkdown, exportPass3Text, exportProjectJson, exportRis, importProjectJson } from './storage/exports'
+import { exportBibTeX, exportComparisonCsv, exportPaperMarkdown, exportPass3Html, exportProjectJson, exportRis, importProjectJson } from './storage/exports'
+import { markdownToHtml, richTextToHtml } from './lib/richText'
 import { clearAllSettings, readActiveProvider, readProviderConfig, saveProviderConfig } from './storage/apiKeyStore'
 import { coCitationRows, verifyCitation } from './research/citations'
 
@@ -64,26 +65,6 @@ function busyDetail(message: string, elapsed: number) {
   if (elapsed < 12) return '正在整理文件內容並等待模型回應，請保持此頁面開啟。'
   if (elapsed < 35) return '模型仍在閱讀與產生結構化結果，較長的論文可能需要一些時間。'
   return '仍在處理中；完成後會自動驗證結果。若不想繼續等待，可以取消這次請求。'
-}
-
-function markdownToHtml(value: string) {
-  const escaped = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-  const inline = (line: string) => line
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/__([^_]+)__/g, '<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-  const blocks = escaped.split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean)
-  return blocks.map((block) => {
-    const lines = block.split('\n')
-    if (lines.every((line) => /^\s*[-*]\s+/.test(line))) return `<ul>${lines.map((line) => `<li>${inline(line.replace(/^\s*[-*]\s+/, ''))}</li>`).join('')}</ul>`
-    if (lines.every((line) => /^\s*\d+\.\s+/.test(line))) return `<ol>${lines.map((line) => `<li>${inline(line.replace(/^\s*\d+\.\s+/, ''))}</li>`).join('')}</ol>`
-    if (lines.length === 1) {
-      const heading = lines[0].match(/^\s*(#{1,4})\s+(.+)$/)
-      if (heading) return `<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`
-    }
-    return `<p>${lines.map(inline).join('<br />')}</p>`
-  }).join('')
 }
 
 function MarkdownOutput({ label, value, onDelete }: { label: string; value: string; onDelete?: () => void }) {
@@ -379,8 +360,7 @@ export default function App() {
       const response = await analyzePass3(config, selectedPaper.pass1!, selectedPaper.pass2!, selectedPaper.notes, selectedPaper.highlights, userPlan, signal)
       setLastUsage(response.usage)
       const text = response.text.trim()
-      updatePaper(selectedPaper.id, (paper) => ({ ...paper, pass3: undefined, pass3Text: text, analysisModel: `${config.id}:${config.modelId}`, promptVersion: 'pass3.v1' }))
-      exportPass3Text(selectedPaper, text)
+      updatePaper(selectedPaper.id, (paper) => ({ ...paper, pass3: undefined, pass3Text: text, analysisModel: `${config.id}:${config.modelId}`, promptVersion: PASS3_PROMPT_VERSION }))
       setTab('pass3')
     }, false, '第一遍、第二遍、筆記與螢光重點')
   }
@@ -564,7 +544,7 @@ export default function App() {
           {tab === 'overview' && <Overview paper={selectedPaper} document={selectedDocument} onPass1={runPass1} onPass2={runPass2} onPass3={runPass3} onJump={(page) => setPageIndex(page)} />}
           {tab === 'pass1' && <Pass1View paper={selectedPaper} onRun={runPass1} onEvidence={jumpToEvidence} />}
           {tab === 'pass2' && <Pass2View paper={selectedPaper} onRun={runPass2} onEvidence={jumpToEvidence} onJump={(page) => page !== null && setPageIndex(page)} />}
-          {tab === 'pass3' && <Pass3View paper={selectedPaper} userPlan={userPlan} setUserPlan={setUserPlan} onRun={runPass3} />}
+          {tab === 'pass3' && <Pass3View paper={selectedPaper} userPlan={userPlan} setUserPlan={setUserPlan} onRun={runPass3} onClear={() => updatePaper(selectedPaper.id, (paper) => ({ ...paper, pass3: undefined, pass3Text: undefined }))} />}
           {tab === 'compare' && <CompareView papers={bundle.papers} selectedIds={compareIds} setSelectedIds={setCompareIds} query={compareQuery} setQuery={setCompareQuery} rows={rows} comparison={comparison} onExport={() => exportComparisonCsv(selectedComparePapers)} onSelectPaper={(id: string, page: number | null) => { setSelectedId(id); setPageIndex(page ?? 0) }} />}
           {tab === 'research' && <ResearchView papers={bundle.papers} coCitations={coCitations} onVerify={(paperId: string, citationId: string) => void verifyReference(paperId, citationId)} onBib={() => exportBibTeX(bundle.papers)} onRis={() => exportRis(bundle.papers)} />}
           {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onDeleteHighlight={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))} onDeleteHighlightOutput={(id: string, output: 'aiSummary' | 'translation') => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((highlight) => highlight.id === id ? { ...highlight, [output]: undefined } : highlight) }))} onDeleteAiSummary={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: (paper.aiRegionSummaries ?? []).filter((summary) => summary.id !== id) }))} onHighlightAction={runHighlightTextAction} onChangeHighlightColor={updateHighlightColor} onJump={setPageIndex} onMarkdown={() => exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={() => { if (window.confirm('清除瀏覽器中的整個專案？請先匯出 JSON 備份。')) void clearBundle().then(() => { setBundle(emptyBundle()); setDocuments({}); setSelectedId('') }) }} />}
@@ -613,10 +593,10 @@ function Pass2View({ paper, onRun, onEvidence, onJump }: { paper: Paper; onRun: 
   return <div className="section-stack"><div className="section-title"><div><span className="eyebrow">METHOD & EVIDENCE</span><h2>方法與實驗設計</h2></div><button className="small-button" onClick={onRun}>重新分析</button></div><div className="two-column"><section className="content-card"><h3>研究動機</h3><p>{data.motivation}</p><h3>問題定義</h3><p>{data.problemDefinition}</p><h3>輸入與輸出</h3><p>{data.inputOutput}</p></section><section className="content-card"><h3>方法流程</h3><ol className="method-steps">{data.methodSteps.map((item, index) => <li key={item}><span>{index + 1}</span><p>{item}</p></li>)}</ol></section></div><section className="content-card"><h3>資料集與評估</h3><div className="data-table-wrap"><table><thead><tr><th>資料集</th><th>版本／規模</th><th>Split</th><th>外部驗證</th><th>洩漏風險</th><th>狀態</th></tr></thead><tbody>{data.datasets.map((item, index) => <tr key={`${item.name}-${index}`}><td>{item.name}</td><td>{[item.version, item.size].filter(Boolean).join(' · ') || '未報告'}</td><td>{item.split ?? '未報告'}</td><td>{item.externalValidation ?? '未報告'}</td><td>{item.leakageRisk ?? '未報告'}</td><td><span className={`status-pill ${item.status}`}>{item.status}</span><EvidenceButtons ids={item.evidenceIds} paper={paper} onEvidence={onEvidence} /></td></tr>)}</tbody></table></div></section><section className="content-card"><h3>Figure / Table 索引</h3><div className="index-list">{[...data.tables, ...data.figures].map((item) => <button key={`${item.label}-${item.pdfPageIndex}`} onClick={() => onJump(item.pdfPageIndex)}><strong>{item.label}</strong><span>{item.title}<small>{item.interpretation}</small></span><b>{item.pdfPageIndex === null ? '?' : `p.${item.pdfPageIndex + 1}`}</b></button>)}</div></section><section className="content-card"><h3>作者主張 → 證據 → 限制</h3><div className="claim-list">{data.claims.map((item, index) => <article key={`${item.claim}-${index}`}><strong>{item.claim}</strong><p><b>證據：</b>{item.support}</p><p><b>限制：</b>{item.limitation}</p><EvidenceButtons ids={item.evidenceIds} paper={paper} onEvidence={onEvidence} /></article>)}</div></section><details className="guide-questions"><summary>學生引導問題（先思考再展開）</summary><ol>{data.guideQuestions.map((item) => <li key={item}>{item}</li>)}</ol></details></div>
 }
 
-function Pass3View({ paper, userPlan, setUserPlan, onRun }: { paper: Paper; userPlan: string; setUserPlan: (value: string) => void; onRun: () => void }) {
+function Pass3View({ paper, userPlan, setUserPlan, onRun, onClear }: { paper: Paper; userPlan: string; setUserPlan: (value: string) => void; onRun: () => void; onClear: () => void }) {
   const text = paper.pass3Text?.trim()
   const data = paper.pass3
-  return <div className="section-stack"><section className="analysis-control pass3-control"><div><span className="eyebrow">VIRTUAL RECONSTRUCTION</span><h2>第三遍：重建與批判</h2><p>根據第一遍、第二遍、筆記與螢光重點重新分析；不重新讀取全文，直接產生文字報告。</p></div><div className="reimplementation"><label>如果由我重新實作，我會怎麼做？<textarea value={userPlan} onChange={(event) => setUserPlan(event.target.value)} placeholder="先寫下自己的方案，再與 AI 建議並列…" /></label><div className="reimplementation-actions"><button className="secondary-button" disabled title="全文重讀功能尚未開放">全文重讀（尚未開放）</button><button className="primary-button" disabled={!paper.pass2} onClick={onRun}>{text || data ? '依最新筆記與螢光重點重新分析' : '產生第三遍文字報告'}</button></div></div></section>{text ? <section className="content-card pass3-text-card"><div className="section-title"><div><span className="eyebrow">MARKDOWN / HTML REPORT</span><h2>第三遍閱讀報告</h2></div><button className="small-button" onClick={() => exportPass3Text(paper, text)}>下載 .txt</button></div><div className="pass3-rich-output" dangerouslySetInnerHTML={{ __html: markdownToHtml(text) }} /></section> : data ? <><section className="content-card"><h2>重建程序</h2><div className="reconstruction-list">{data.reconstruction.map((item, index) => <article key={`${item.step}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><h3>{item.step}<i className={`recon-status ${item.status}`}>{item.status}</i></h3><p>{item.detail}</p></div></article>)}</div></section><div className="two-column"><CriticalList title="隱藏假設" items={data.assumptions} /><CriticalList title="效度威脅" items={data.threats} /><CriticalList title="可重現風險" items={data.reproducibilityRisks} /></div><section><div className="section-title"><div><span className="eyebrow">AI-GENERATED, TESTABLE</span><h2>後續研究題目</h2></div></div><div className="idea-grid">{data.researchIdeas.map((item, index) => <article key={item.question}><span>IDEA {index + 1}</span><h3>{item.question}</h3><p><b>動機：</b>{item.motivation}</p><p><b>假設：</b>{item.hypothesis}</p><p><b>最小實驗：</b>{item.minimumExperiment}</p><p><b>資料／指標：</b>{item.requiredData} · {item.metric}</p></article>)}</div></section></> : <EmptyAnalysis title="尚未進入第三遍" text="先完成第二遍，並寫下自己的重建思路。" />}</div>
+  return <div className="section-stack"><section className="analysis-control pass3-control"><div><span className="eyebrow">VIRTUAL RECONSTRUCTION</span><h2>第三遍：重建與批判</h2><p>根據第一遍、第二遍、筆記與螢光重點重新分析；不重新讀取全文，直接產生 HTML 閱讀報告。</p></div><div className="reimplementation"><label>如果由我重新實作，我會怎麼做？<textarea value={userPlan} onChange={(event) => setUserPlan(event.target.value)} placeholder="先寫下自己的方案，再與 AI 建議並列…" /></label><div className="reimplementation-actions"><button className="secondary-button" disabled title="全文重讀功能尚未開放">全文重讀（尚未開放）</button><button className="primary-button" disabled={!paper.pass2} onClick={onRun}>{text || data ? '依最新筆記與螢光重點重新分析' : '產生第三遍 HTML 報告'}</button></div></div></section>{text ? <section className="content-card pass3-text-card"><div className="section-title"><div><span className="eyebrow">HTML / MARKDOWN REPORT</span><h2>第三遍閱讀報告</h2></div><div className="pass3-report-actions"><button className="small-button" onClick={() => exportPass3Html(paper, text)}>下載 .html</button><button className="small-button danger-button" onClick={onClear}>清除閱讀報告</button></div></div><div className="pass3-rich-output" dangerouslySetInnerHTML={{ __html: richTextToHtml(text) }} /></section> : data ? <><section className="content-card"><div className="section-title"><h2>重建程序</h2><button className="small-button danger-button" onClick={onClear}>清除閱讀報告</button></div><div className="reconstruction-list">{data.reconstruction.map((item, index) => <article key={`${item.step}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><h3>{item.step}<i className={`recon-status ${item.status}`}>{item.status}</i></h3><p>{item.detail}</p></div></article>)}</div></section><div className="two-column"><CriticalList title="隱藏假設" items={data.assumptions} /><CriticalList title="效度威脅" items={data.threats} /><CriticalList title="可重現風險" items={data.reproducibilityRisks} /></div><section><div className="section-title"><div><span className="eyebrow">AI-GENERATED, TESTABLE</span><h2>後續研究題目</h2></div></div><div className="idea-grid">{data.researchIdeas.map((item, index) => <article key={item.question}><span>IDEA {index + 1}</span><h3>{item.question}</h3><p><b>動機：</b>{item.motivation}</p><p><b>假設：</b>{item.hypothesis}</p><p><b>最小實驗：</b>{item.minimumExperiment}</p><p><b>資料／指標：</b>{item.requiredData} · {item.metric}</p></article>)}</div></section></> : <EmptyAnalysis title="尚未進入第三遍" text="先完成第二遍，並寫下自己的重建思路。" />}</div>
 }
 
 function CriticalList({ title, items }: { title: string; items: Array<{ title: string; assessment: string; status: string }> }) {

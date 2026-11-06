@@ -3,7 +3,7 @@ import { wrapUntrusted } from '../security'
 
 export const PASS1_PROMPT_VERSION = 'pass1.v1'
 export const PASS2_PROMPT_VERSION = 'pass2.v1'
-export const PASS3_PROMPT_VERSION = 'pass3.v1'
+export const PASS3_PROMPT_VERSION = 'pass3.v2'
 export const TABLE_PROMPT_VERSION = 'table.v1'
 
 export function pass1Prompt(researchQuestion: string) {
@@ -23,8 +23,8 @@ export function pass3Prompt(pass1: Pass1Result, pass2: Pass2Result, userPlan: st
     notes: notes.map((note) => ({ body: note.body, verification: note.verification })),
     highlights: highlights.map((highlight) => ({ page: highlight.pdfPageIndex, color: highlight.color, text: highlight.text ?? '', aiSummary: highlight.aiSummary ?? '', translation: highlight.translation ?? '' })),
   }
-  return `執行第三遍虛擬重建與批判，並直接輸出一份可保存成 .txt 的繁體中文閱讀報告。這一遍只使用第一遍、第二遍、使用者筆記與螢光重點，不重新讀取或分析 PDF 全文；使用者筆記與螢光內容是閱讀方向與問題線索，不是未經證明的論文事實。
-直接輸出報告正文，不要求 JSON、Schema、固定欄位或其他特定格式；可視需要使用 Markdown 標題、條列或段落，不要說明輸出格式。報告應重建問題、資料處理、模型、loss、訓練、評估與超參數，逐項指出 explicit／implicit／missing；檢查假設、baseline、ablation、統計可靠性、可重現性與威脅效度；提出 3–5 個可驗證研究題目，包含動機、假設、最小實驗、所需資料與驗證指標。這些是 AI 建議，不是原文結論；不得宣稱已重新實作。需要原文支持的判斷，只能使用第一、二遍中已有的 evidenceIds。
+  return `執行第三遍虛擬重建與批判，並直接輸出一份繁體中文 HTML 閱讀報告。這一遍只使用第一遍、第二遍、使用者筆記與螢光重點，不重新讀取或分析 PDF 全文；使用者筆記與螢光內容是閱讀方向與問題線索，不是未經證明的論文事實。
+只輸出可直接嵌入頁面的 HTML fragment，不要輸出 Markdown、JSON、程式碼圍欄、<!DOCTYPE>、<html>、<head>、<body>、style、script、class、id 或任何事件屬性。只能使用 section、h2、h3、p、ul、ol、li、strong、em、table、thead、tbody、tr、th、td、code、blockquote、hr。以清楚的標題與區塊組織報告，不要說明輸出格式。報告應重建問題、資料處理、模型、loss、訓練、評估與超參數，逐項指出 explicit／implicit／missing；檢查假設、baseline、ablation、統計可靠性、可重現性與威脅效度；提出 3–5 個可驗證研究題目，包含動機、假設、最小實驗、所需資料與驗證指標。這些是 AI 建議，不是原文結論；不得宣稱已重新實作。需要原文支持的判斷，只能使用第一、二遍中已有的 evidenceIds。
 
 第一、二遍資料：${wrapUntrusted('previous-analysis', JSON.stringify({ pass1, pass2 }))}
 使用者筆記與螢光重點：${wrapUntrusted('user-annotations', JSON.stringify(annotationContext))}

@@ -1,4 +1,5 @@
 import type { Paper, ProjectBundle } from '../domain/types'
+import { richTextToHtml } from '../lib/richText'
 import { migrateBundle, stripSecrets } from './projectStore'
 
 function download(name: string, content: string, type = 'text/plain;charset=utf-8') {
@@ -28,6 +29,7 @@ export function paperMarkdown(paper: Paper) {
     const item = paper.evidence.find((row) => row.id === id)
     return item ? `PDF p.${item.pdfPageDisplay ?? '?'}「${item.quote ?? '未找到摘錄'}」[${item.verificationStatus}]` : `來源 ${id}（未找到）`
   }).join('；')
+  const pass3Report = paper.pass3Text?.trim() ? richTextToHtml(paper.pass3Text) : ''
   return `# ${pass1?.title ?? paper.title ?? paper.filename}
 
 - 檔案：${paper.filename}
@@ -60,11 +62,11 @@ ${pass2?.claims.map((item) => `- ${item.claim}\n  - 支持：${item.support}\n  
 
 ## 第三遍
 
-${paper.pass3Text?.trim() || pass3?.reconstruction.map((item) => `- **${item.step}** [${item.status}]：${item.detail}`).join('\n') || '尚未分析'}
+${pass3Report || pass3?.reconstruction.map((item) => `- **${item.step}** [${item.status}]：${item.detail}`).join('\n') || '尚未分析'}
 
 ### AI 建議的研究題目
 
-${paper.pass3Text?.trim() ? '（第三遍已以純文字報告輸出；以上內容即為完整報告。）' : pass3?.researchIdeas.map((item) => `- **${item.question}**\n  - 假設：${item.hypothesis}\n  - 最小實驗：${item.minimumExperiment}`).join('\n') || '尚未分析'}
+${pass3Report ? '（第三遍已以 HTML／Markdown 報告輸出；以上內容即為完整報告。）' : pass3?.researchIdeas.map((item) => `- **${item.question}**\n  - 假設：${item.hypothesis}\n  - 最小實驗：${item.minimumExperiment}`).join('\n') || '尚未分析'}
 
 ## 螢光標記與文字定位
 
@@ -86,8 +88,14 @@ export function exportPaperMarkdown(paper: Paper) {
   download(`${safeName(paper.title ?? paper.filename)}.md`, paperMarkdown(paper), 'text/markdown;charset=utf-8')
 }
 
-export function exportPass3Text(paper: Paper, text = paper.pass3Text ?? '') {
-  download(`${safeName(paper.title ?? paper.filename)}-第三遍.txt`, text, 'text/plain;charset=utf-8')
+export function pass3HtmlDocument(paper: Paper, text = paper.pass3Text ?? '') {
+  const title = safeName(paper.title ?? paper.filename)
+  const report = richTextToHtml(text)
+  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}－第三遍閱讀報告</title><style>body{max-width:960px;margin:40px auto;padding:0 24px;color:#293537;font:16px/1.75 system-ui,sans-serif}h1,h2,h3,h4{color:#244c50}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #ccd4d1;text-align:left}code{padding:2px 4px;background:#eef1ef}blockquote{margin-left:0;padding-left:16px;border-left:4px solid #83aaa3;color:#526166}</style></head><body><main>${report}</main></body></html>`
+}
+
+export function exportPass3Html(paper: Paper, text = paper.pass3Text ?? '') {
+  download(`${safeName(paper.title ?? paper.filename)}-第三遍.html`, pass3HtmlDocument(paper, text), 'text/html;charset=utf-8')
 }
 
 function csvSafe(value: unknown) {

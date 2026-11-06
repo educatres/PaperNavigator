@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { pagesForPrompt, verifyEvidence } from '../pdf/pdfClient'
-import { comparisonCsv, paperMarkdown } from '../storage/exports'
+import { comparisonCsv, paperMarkdown, pass3HtmlDocument } from '../storage/exports'
 import type { Paper, PdfDocumentData } from '../domain/types'
 
 describe('evidence verification', () => {
@@ -54,5 +54,19 @@ describe('annotation export', () => {
     expect(markdown).toContain('翻譯文字')
     expect(markdown).toContain('定位文字')
     expect(markdown).toContain('圈選摘要')
+  })
+})
+
+describe('third-pass HTML export', () => {
+  it('creates an HTML document from HTML or Markdown while removing unsafe markup', () => {
+    const paper = {
+      id: 'p', projectId: 'project', sha256: 'hash', filename: 'p.pdf', title: 'Paper',
+      authors: [], year: null, doi: null, pageCount: 1, size: 1, uploadTime: '', tableAnalyses: [], citations: [], evidence: [], notes: [], highlights: [], observations: [],
+    } as Paper
+    const html = pass3HtmlDocument(paper, '<section><h2 onclick="bad()">重建</h2><script>bad()</script><p>內容</p></section>')
+
+    expect(html).toContain('<main><section><h2>重建</h2><p>內容</p></section></main>')
+    expect(html).not.toContain('onclick')
+    expect(html).not.toContain('<script>')
   })
 })

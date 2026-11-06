@@ -9,6 +9,8 @@ describe('third-pass prompt context', () => {
     const prompt = pass3Prompt({} as Pass1Result, {} as Pass2Result, '', [note], [highlight])
 
     expect(prompt).toContain('不重新讀取或分析 PDF 全文')
+    expect(prompt).toContain('HTML fragment')
+    expect(prompt).toContain('不要輸出 Markdown')
     expect(prompt).toContain('檢查資料洩漏')
     expect(prompt).toContain('held-out test set')
   })
