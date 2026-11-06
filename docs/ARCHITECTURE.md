@@ -26,7 +26,7 @@ UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，�
 
 ## 分階段分析
 
-1. PDF.js 驗證檔案、取得頁數、逐頁文字與 SHA-256。
+1. PDF.js 驗證檔案、取得頁數、完整逐頁文字與 SHA-256；第一遍／第二遍的文字型 Provider 送出全部頁面與頁碼標記。
 2. Pass 1 只產生鳥瞰與五個 C。
 3. 使用者明確選擇後才執行 Pass 2；產生方法、圖表索引、evidence、observations 與 references。
 4. Pass 3 只在 Pass 2 後執行；輸出重建狀態、假設、威脅與可驗證研究題目。

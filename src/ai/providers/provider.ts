@@ -177,7 +177,7 @@ export async function generateStructured(
     return { text, usage: usageFromGoogle(body) }
   }
   const source = wrapUntrusted('pdf-extracted-text', pagesForPrompt(document))
-  const input = `${prompt}\n\n以下為 PDF.js 本機擷取的逐頁文字；頁面標記是引用定位依據：\n${source}\n\n${outputContract}`
+  const input = `${prompt}\n\n以下為 PDF.js 本機擷取的完整逐頁文字；不得省略任何頁面，頁面標記是引用定位依據：\n${source}\n\n${outputContract}`
   if (config.id === 'cgu' && config.modelId !== 'gpt-oss:20b') {
     const body = await fetchWithRetry(`${base}/responses`, {
       method: 'POST', headers: bearerHeaders(config.apiKey),

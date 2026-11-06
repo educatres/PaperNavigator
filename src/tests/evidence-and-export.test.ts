@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { verifyEvidence } from '../pdf/pdfClient'
+import { pagesForPrompt, verifyEvidence } from '../pdf/pdfClient'
 import { comparisonCsv, paperMarkdown } from '../storage/exports'
-import type { Paper } from '../domain/types'
+import type { Paper, PdfDocumentData } from '../domain/types'
 
 describe('evidence verification', () => {
   it('normalizes whitespace and punctuation when matching a quote', () => {
@@ -11,6 +11,16 @@ describe('evidence verification', () => {
       verificationStatus: 'unverified', notes: null,
     }], ['The experiment reports: Accuracy was 92.0 % on the held-out test set.'])
     expect(result.verificationStatus).toBe('matched')
+  })
+})
+
+describe('full-document prompt context', () => {
+  it('keeps later pages instead of truncating the prompt at a fixed character cap', () => {
+    const document = { pagesText: ['a'.repeat(160_000), '最後一頁的內容'] } as PdfDocumentData
+    const prompt = pagesForPrompt(document)
+    expect(prompt).toContain('[PDF page 1; pdfPageIndex 0]')
+    expect(prompt).toContain('[PDF page 2; pdfPageIndex 1]')
+    expect(prompt).toContain('最後一頁的內容')
   })
 })
 

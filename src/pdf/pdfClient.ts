@@ -77,7 +77,7 @@ export async function renderPdfPage(pdf: PDFDocumentProxy, pageNumber: number, c
   }
 }
 
-export function pagesForPrompt(data: PdfDocumentData, maxChars = 150_000) {
+export function pagesForPrompt(data: PdfDocumentData, maxChars = Number.POSITIVE_INFINITY) {
   let used = 0
   const rows: string[] = []
   for (let index = 0; index < data.pagesText.length; index += 1) {

@@ -7,13 +7,13 @@ export const PASS3_PROMPT_VERSION = 'pass3.v1'
 export const TABLE_PROMPT_VERSION = 'table.v1'
 
 export function pass1Prompt(researchQuestion: string) {
-  return `執行 Keshav 三遍閱讀法的第一遍。輸出符合 schema 的 JSON。完成 metadata、≤60 字研究主題、研究問題、領域、類型、章節大綱、五個 C、最多三項貢獻、閱讀建議與待釐清概念。
+  return `執行 Keshav 三遍閱讀法的第一遍。請逐頁閱讀完整 PDF，不能只根據第一頁或前段內容推斷；輸出符合 schema 的 JSON。完成 metadata、≤60 字研究主題、研究問題、領域、類型、章節大綱、五個 C、最多三項貢獻、閱讀建議與待釐清概念。
 Correctness 只能標示為初步檢視。若使用者未提供研究問題，不得捏造相關分數。每個事實透過 evidenceIds 指向 evidence；每筆 evidence 使用 PDF 實體頁的 0-based pdfPageIndex 與 1-based pdfPageDisplay，quote 必須是短摘錄。找不到時用 null 與 unverified。
 使用者研究問題：${wrapUntrusted('research-question', researchQuestion || '未提供')}`
 }
 
 export function pass2Prompt(pass1: Pass1Result) {
-  return `執行第二遍閱讀。只根據論文提取研究動機、問題定義、輸入輸出、方法步驟、模組、訓練與推理設定、資料集、指標、Figure/Table 索引、主張與證據、3–5 個引導問題、逐列 MetricObservation、references 與 evidence。
+  return `執行第二遍閱讀。請逐頁閱讀完整 PDF，不能只分析單一頁面；只根據論文提取研究動機、問題定義、輸入輸出、方法步驟、模組、訓練與推理設定、資料集、指標、Figure/Table 索引、主張與證據、3–5 個引導問題、逐列 MetricObservation、references 與 evidence。
 觀測值必須保留 rawValue；不存在的數值填 null 且 status=not_reported，絕不可用 0。paper_proposed、reproduced_baseline、cited_prior_work 必須分開。表格頁碼用 0-based pdfPageIndex。
 第一遍結果僅供脈絡，不得把其中內容當成新證據：${wrapUntrusted('pass1-cache', JSON.stringify(pass1))}`
 }
