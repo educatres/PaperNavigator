@@ -229,7 +229,8 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .three-step-grid h3 { margin: 6px 0; }
 .reimplementation { width: min(400px, 47%); }
 .reimplementation textarea { min-height: 80px; }
-.reimplementation .primary-button { float: right; margin-top: 7px; }
+.reimplementation-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-top: 7px; }
+.reimplementation-actions button { margin-top: 0; }
 .reconstruction-list { display: grid; gap: 1px; background: var(--line); }
 .reconstruction-list article { display: grid; grid-template-columns: 45px 1fr; padding: 12px; background: #faf9f5; }
 .reconstruction-list article > span { color: #a1aaa9; font: 10px 'DM Mono', monospace; }

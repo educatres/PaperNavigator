@@ -73,6 +73,30 @@ describe('Structured response format retries', () => {
     expect(generate).toHaveBeenCalledTimes(2)
   })
 
+  it('uses one format-only repair call based on the invalid output before normal retries', async () => {
+    const repair = vi.fn(async (rawText: string, issue: string) => {
+      expect(rawText).toBe('{"value":1}')
+      expect(issue).toContain('欄位或型別不符合 schema')
+      return { text: '{"value":"fixed"}', usage }
+    })
+    const response = await generateWithFormatRetries({
+      stage: '第三遍閱讀',
+      prompt: 'Analyze.',
+      generate: async () => ({ text: '{"value":1}', usage }),
+      repair,
+      parseAndValidate: (text) => {
+        const parsed = JSON.parse(text) as { value?: unknown }
+        if (typeof parsed.value !== 'string') throw new Error('欄位或型別不符合 schema')
+        return parsed as { value: string }
+      },
+    })
+
+    expect(response.result).toEqual({ value: 'fixed' })
+    expect(repair).toHaveBeenCalledOnce()
+    expect(response.attempts).toBe(2)
+    expect(response.usage).toEqual({ inputTokens: 2, outputTokens: 4, totalTokens: 6 })
+  })
+
   it('does not turn network or permission failures into format retries', async () => {
     const generate = vi.fn(async () => { throw new Error('API Key 無效或遺失') })
 

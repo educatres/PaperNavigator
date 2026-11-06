@@ -1,4 +1,4 @@
-import type { Pass1Result, Pass2Result } from '../../domain/types'
+import type { Pass1Result, Pass2Result, PdfHighlight, UserNote } from '../../domain/types'
 import { wrapUntrusted } from '../security'
 
 export const PASS1_PROMPT_VERSION = 'pass1.v1'
@@ -18,9 +18,14 @@ export function pass2Prompt(pass1: Pass1Result) {
 第一遍結果僅供脈絡，不得把其中內容當成新證據：${wrapUntrusted('pass1-cache', JSON.stringify(pass1))}`
 }
 
-export function pass3Prompt(pass1: Pass1Result, pass2: Pass2Result, userPlan: string) {
-  return `執行第三遍虛擬重建與批判。逐步重建問題、資料處理、模型、loss、訓練、評估與超參數，逐項標 explicit／implicit／missing。檢查假設、baseline、ablation、統計可靠性、可重現性與威脅效度。提出 3–5 個可驗證研究題目，每題必須包含動機、假設、最小實驗、所需資料與驗證指標，且這些是 AI 建議，不是原文結論。不得宣稱已重新實作。
+export function pass3Prompt(pass1: Pass1Result, pass2: Pass2Result, userPlan: string, notes: UserNote[] = [], highlights: PdfHighlight[] = []) {
+  const annotationContext = {
+    notes: notes.map((note) => ({ body: note.body, verification: note.verification })),
+    highlights: highlights.map((highlight) => ({ page: highlight.pdfPageIndex, color: highlight.color, text: highlight.text ?? '', aiSummary: highlight.aiSummary ?? '', translation: highlight.translation ?? '' })),
+  }
+  return `執行第三遍虛擬重建與批判。這一遍只使用第一遍、第二遍、使用者筆記與螢光重點，不重新讀取或分析 PDF 全文；使用者筆記與螢光內容是閱讀方向與問題線索，不是未經證明的論文事實。逐步重建問題、資料處理、模型、loss、訓練、評估與超參數，逐項標 explicit／implicit／missing。檢查假設、baseline、ablation、統計可靠性、可重現性與威脅效度。提出 3–5 個可驗證研究題目，每題必須包含動機、假設、最小實驗、所需資料與驗證指標，且這些是 AI 建議，不是原文結論。不得宣稱已重新實作。每個需要原文支持的判斷，只能使用第一、二遍中已有的 evidenceIds。
 第一、二遍資料：${wrapUntrusted('previous-analysis', JSON.stringify({ pass1, pass2 }))}
+使用者筆記與螢光重點：${wrapUntrusted('user-annotations', JSON.stringify(annotationContext))}
 使用者重建想法：${wrapUntrusted('user-reimplementation-plan', userPlan || '未提供')}`
 }
 

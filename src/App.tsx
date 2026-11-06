@@ -326,14 +326,14 @@ export default function App() {
     setMessage('已清除所有 AI 連線設定，並恢復 CGU／Gemma 預設值。')
   }
 
-  const startJob = async (label: string, task: (signal: AbortSignal) => Promise<void>, requiresDocument = true) => {
+  const startJob = async (label: string, task: (signal: AbortSignal) => Promise<void>, requiresDocument = true, sourceLabel = '選取的內容') => {
     if (!selectedPaper || (requiresDocument && !selectedDocument)) { setError(requiresDocument ? '請先選取並附上 PDF。' : '請先選取論文。'); return }
     if (!config.apiKey || !config.modelId) { setSettingsOpen(true); setError('請先輸入 API Key、測試連線並選擇模型。'); return }
     const controller = new AbortController()
     abortRef.current = controller
     setBusy(label)
     setError('')
-    setMessage(`${label}。${requiresDocument ? 'PDF 將傳送' : '選取的文字將傳送'}至所選 AI 服務；費用依目前帳號、模型與使用量而定。`)
+    setMessage(`${label}。${requiresDocument ? 'PDF 將傳送' : `${sourceLabel}將傳送`}至所選 AI 服務；費用依目前帳號、模型與使用量而定。`)
     try { await task(controller.signal); setMessage(`${label.replace('正在', '')}完成。`) }
     catch (value) { if ((value as Error)?.name !== 'AbortError') reportError(value); else setMessage('分析已取消。') }
     finally { setBusy(''); abortRef.current = null }
@@ -367,11 +367,11 @@ export default function App() {
   const runPass3 = () => {
     if (!selectedPaper?.pass1 || !selectedPaper.pass2) { setError('請先完成第一遍與第二遍閱讀。'); return }
     void startJob('正在執行第三遍閱讀', async (signal) => {
-      const response = await analyzePass3(config, selectedDocument!, selectedPaper.pass1!, selectedPaper.pass2!, userPlan, signal, handleFormatRetry)
+      const response = await analyzePass3(config, selectedPaper.pass1!, selectedPaper.pass2!, selectedPaper.notes, selectedPaper.highlights, userPlan, signal, handleFormatRetry)
       setLastUsage(response.usage)
       updatePaper(selectedPaper.id, (paper) => ({ ...paper, pass3: response.result, analysisModel: `${config.id}:${config.modelId}`, promptVersion: 'pass3.v1' }))
       setTab('pass3')
-    })
+    }, false, '第一遍、第二遍、筆記與螢光重點')
   }
 
   const analyzeRegion = async (dataUrl: string, targetPage: number) => {
@@ -402,7 +402,7 @@ export default function App() {
         ...paper,
         highlights: paper.highlights.map((item) => item.id === highlightId ? { ...item, [action === 'summary' ? 'aiSummary' : 'translation']: value } : item),
       }))
-    }, false)
+    }, false, '選取的文字')
   }
 
   const updateHighlightColor = (highlightId: string, color: PdfHighlight['color']) => {
@@ -574,7 +574,7 @@ function Welcome({ onUpload }: { onUpload: () => void }) {
 function Overview({ paper, document, onPass1, onPass2, onPass3, onJump }: { paper: Paper; document: PdfDocumentData | null; onPass1: () => void; onPass2: () => void; onPass3: () => void; onJump: (page: number) => void }) {
   return <div className="section-stack"><div className="metric-grid"><article><span>PDF 頁數</span><strong>{paper.pageCount}</strong><small>{formatBytes(paper.size)}</small></article><article><span>來源核對</span><strong>{paper.evidence.filter((item) => item.verificationStatus === 'matched').length}<em> / {paper.evidence.length}</em></strong><small>已定位摘錄</small></article><article><span>結果觀測</span><strong>{paper.observations.length}</strong><small>保留原始數值</small></article><article><span>閱讀進度</span><strong>{paper.pass3 ? '3 / 3' : paper.pass2 ? '2 / 3' : paper.pass1 ? '1 / 3' : '0 / 3'}</strong><small>三遍閱讀法</small></article></div>
     {document?.warnings.map((warning) => <div className="warning-card" key={warning}>△ {warning}</div>)}
-    <div className="stage-grid"><article className={paper.pass1 ? 'stage-card complete' : 'stage-card'}><span>第一遍 · 鳥瞰</span><h2>五個 C 與閱讀決策</h2><p>擷取研究問題、主要貢獻與值得繼續閱讀的理由。</p><button className="primary-button" disabled={!document} onClick={onPass1}>{paper.pass1 ? '重新分析第一遍' : '開始第一遍'}</button></article><article className={paper.pass2 ? 'stage-card complete' : 'stage-card'}><span>第二遍 · 理解</span><h2>方法、實驗與表格</h2><p>只在你決定深入後啟動，避免一次產生全部 API 用量。</p><button className="secondary-button" disabled={!document || !paper.pass1} onClick={onPass2}>{paper.pass2 ? '重新分析第二遍' : '深入第二遍'}</button></article><article className={paper.pass3 ? 'stage-card complete' : 'stage-card'}><span>第三遍 · 重建</span><h2>假設、風險與研究題目</h2><p>標示明確提供、作者隱含與缺少資訊，不宣稱已重現。</p><button className="secondary-button" disabled={!document || !paper.pass2} onClick={onPass3}>{paper.pass3 ? '重新分析第三遍' : '進入第三遍'}</button></article></div>
+    <div className="stage-grid"><article className={paper.pass1 ? 'stage-card complete' : 'stage-card'}><span>第一遍 · 鳥瞰</span><h2>五個 C 與閱讀決策</h2><p>擷取研究問題、主要貢獻與值得繼續閱讀的理由。</p><button className="primary-button" disabled={!document} onClick={onPass1}>{paper.pass1 ? '重新分析第一遍' : '開始第一遍'}</button></article><article className={paper.pass2 ? 'stage-card complete' : 'stage-card'}><span>第二遍 · 理解</span><h2>方法、實驗與表格</h2><p>只在你決定深入後啟動，避免一次產生全部 API 用量。</p><button className="secondary-button" disabled={!document || !paper.pass1} onClick={onPass2}>{paper.pass2 ? '重新分析第二遍' : '深入第二遍'}</button></article><article className={paper.pass3 ? 'stage-card complete' : 'stage-card'}><span>第三遍 · 重建</span><h2>假設、風險與研究題目</h2><p>根據第一遍、第二遍、筆記與螢光重點重建，不重新讀取全文。</p><button className="secondary-button" disabled={!paper.pass2} onClick={onPass3}>{paper.pass3 ? '重新分析第三遍' : '進入第三遍'}</button></article></div>
     {paper.pass2?.tables.length ? <section className="content-card"><div className="card-heading"><div><span className="eyebrow">FOUND IN PAPER</span><h2>圖表索引</h2></div></div><div className="index-list">{[...paper.pass2.tables, ...paper.pass2.figures].map((item) => <button key={`${item.label}-${item.pdfPageIndex}`} onClick={() => item.pdfPageIndex !== null && onJump(item.pdfPageIndex)}><strong>{item.label}</strong><span>{item.title}</span><small>{item.pdfPageIndex === null ? '頁碼待確認' : `PDF p.${item.pdfPageIndex + 1}`}</small></button>)}</div></section> : null}
   </div>
 }
@@ -597,7 +597,7 @@ function Pass2View({ paper, onRun, onEvidence, onJump }: { paper: Paper; onRun: 
 
 function Pass3View({ paper, userPlan, setUserPlan, onRun }: { paper: Paper; userPlan: string; setUserPlan: (value: string) => void; onRun: () => void }) {
   const data = paper.pass3
-  return <div className="section-stack"><section className="analysis-control"><div><span className="eyebrow">VIRTUAL RECONSTRUCTION</span><h2>第三遍：重建與批判</h2><p>這是紙上重建，不代表系統已執行程式、訓練模型或驗證可重現性。</p></div><div className="reimplementation"><label>如果由我重新實作，我會怎麼做？<textarea value={userPlan} onChange={(event) => setUserPlan(event.target.value)} placeholder="先寫下自己的方案，再與 AI 建議並列…" /></label><button className="primary-button" disabled={!paper.pass2} onClick={onRun}>{data ? '重新分析第三遍' : '產生重建清單'}</button></div></section>{!data ? <EmptyAnalysis title="尚未進入第三遍" text="先完成第二遍，並寫下自己的重建思路。" /> : <><section className="content-card"><h2>重建程序</h2><div className="reconstruction-list">{data.reconstruction.map((item, index) => <article key={`${item.step}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><h3>{item.step}<i className={`recon-status ${item.status}`}>{item.status}</i></h3><p>{item.detail}</p></div></article>)}</div></section><div className="two-column"><CriticalList title="隱藏假設" items={data.assumptions} /><CriticalList title="效度威脅" items={data.threats} /><CriticalList title="可重現風險" items={data.reproducibilityRisks} /></div><section><div className="section-title"><div><span className="eyebrow">AI-GENERATED, TESTABLE</span><h2>後續研究題目</h2></div></div><div className="idea-grid">{data.researchIdeas.map((item, index) => <article key={item.question}><span>IDEA {index + 1}</span><h3>{item.question}</h3><p><b>動機：</b>{item.motivation}</p><p><b>假設：</b>{item.hypothesis}</p><p><b>最小實驗：</b>{item.minimumExperiment}</p><p><b>資料／指標：</b>{item.requiredData} · {item.metric}</p></article>)}</div></section></>}</div>
+  return <div className="section-stack"><section className="analysis-control"><div><span className="eyebrow">VIRTUAL RECONSTRUCTION</span><h2>第三遍：重建與批判</h2><p>根據第一遍、第二遍、筆記與螢光重點重新分析；不重新讀取全文。</p></div><div className="reimplementation"><label>如果由我重新實作，我會怎麼做？<textarea value={userPlan} onChange={(event) => setUserPlan(event.target.value)} placeholder="先寫下自己的方案，再與 AI 建議並列…" /></label><div className="reimplementation-actions"><button className="secondary-button" disabled title="全文重讀功能尚未開放">全文重讀（尚未開放）</button><button className="primary-button" disabled={!paper.pass2} onClick={onRun}>{data ? '依最新筆記與螢光重點重新分析' : '產生重建清單'}</button></div></div></section>{!data ? <EmptyAnalysis title="尚未進入第三遍" text="先完成第二遍，並寫下自己的重建思路。" /> : <><section className="content-card"><h2>重建程序</h2><div className="reconstruction-list">{data.reconstruction.map((item, index) => <article key={`${item.step}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><h3>{item.step}<i className={`recon-status ${item.status}`}>{item.status}</i></h3><p>{item.detail}</p></div></article>)}</div></section><div className="two-column"><CriticalList title="隱藏假設" items={data.assumptions} /><CriticalList title="效度威脅" items={data.threats} /><CriticalList title="可重現風險" items={data.reproducibilityRisks} /></div><section><div className="section-title"><div><span className="eyebrow">AI-GENERATED, TESTABLE</span><h2>後續研究題目</h2></div></div><div className="idea-grid">{data.researchIdeas.map((item, index) => <article key={item.question}><span>IDEA {index + 1}</span><h3>{item.question}</h3><p><b>動機：</b>{item.motivation}</p><p><b>假設：</b>{item.hypothesis}</p><p><b>最小實驗：</b>{item.minimumExperiment}</p><p><b>資料／指標：</b>{item.requiredData} · {item.metric}</p></article>)}</div></section></>}</div>
 }
 
 function CriticalList({ title, items }: { title: string; items: Array<{ title: string; assessment: string; status: string }> }) {

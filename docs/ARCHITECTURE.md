@@ -12,7 +12,7 @@ Analysis Orchestrator
   ├─ Prompt version
   ├─ AIProvider adapter
   ├─ JSON recovery + Zod schema validation
-  ├─ format retry（初次失敗後最多重做三次）
+  ├─ format retry / format-only repair（先依原始輸出格式化，再最多重做三次）
   └─ Evidence verification
           ↓
 Google generateContent       CGU Responses / Chat Completions
@@ -22,7 +22,7 @@ PDF inlineData                  PDF.js extracted page text
 IndexedDB ← ProjectBundle + PDF Blob → JSON / Markdown / CSV / BibTeX / RIS
 ```
 
-UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，先修復常見的模型包裝格式，再於真正無法解析、截斷或 Schema 失敗時最多重新要求三次；`src/ai/providers` 處理傳輸、錯誤、網路重試與 usage。格式重做與網路重試分開處理，權限、連線或取消錯誤不會被誤判為 JSON 格式問題。比較與差異計算位於純函式，AI 不負責做百分比心算。
+UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，先修復常見的模型包裝格式；若仍無法驗證，會把原始輸出交給一次格式化 LLM，再於仍失敗時最多重新要求三次；`src/ai/providers` 處理傳輸、錯誤、網路重試與 usage。格式重做與網路重試分開處理，權限、連線或取消錯誤不會被誤判為 JSON 格式問題。比較與差異計算位於純函式，AI 不負責做百分比心算。
 
 ## 分階段分析
 
@@ -31,7 +31,8 @@ UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，�
 3. 使用者明確選擇後才執行 Pass 2；產生方法、圖表索引、evidence、observations 與 references。
 4. Pass 3 只在 Pass 2 後執行；輸出重建狀態、假設、威脅與可驗證研究題目。
 5. PDF 檢視器連續渲染所有頁面，捲動時更新目前頁碼；同次文字選取只保存一筆螢光記錄與第一個版面區塊。
-6. 比較工作台只使用已保存的 observations；篩選不觸發 AI。
+6. 第三遍只使用第一遍、第二遍、筆記與螢光重點，不重新傳送 PDF 全文；使用者可隨新增標記再次執行。
+7. 比較工作台只使用已保存的 observations；篩選不觸發 AI。
 
 ## Provider 差異
 

@@ -48,6 +48,7 @@ export async function generateWithFormatRetries<T>(options: {
   stage: string
   prompt: string
   generate: (prompt: string, signal?: AbortSignal) => Promise<RawStructuredGeneration>
+  repair?: (rawText: string, issue: string, signal?: AbortSignal) => Promise<RawStructuredGeneration>
   parseAndValidate: (text: string) => T
   signal?: AbortSignal
   onRetry?: (notice: StructuredRetryNotice) => void
@@ -55,6 +56,7 @@ export async function generateWithFormatRetries<T>(options: {
   let usage: AnalysisUsage = { inputTokens: null, outputTokens: null, totalTokens: null }
   let lastError: unknown
   let previousIssue = ''
+  let repairAttempted = false
 
   for (let attempt = 1; attempt <= STRUCTURED_FORMAT_ATTEMPTS; attempt += 1) {
     if (options.signal?.aborted) throw new DOMException('分析已取消。', 'AbortError')
@@ -81,6 +83,19 @@ export async function generateWithFormatRetries<T>(options: {
     } catch (error) {
       lastError = error
       previousIssue = correctionGuidance(error)
+      if (options.repair && !repairAttempted) {
+        repairAttempted = true
+        options.onRetry?.({ stage: `${options.stage}格式化`, retry: 1, maxRetries: 1 })
+        const repaired = await options.repair(raw.text, previousIssue, options.signal)
+        usage = addUsage(usage, repaired.usage)
+        try {
+          const result = options.parseAndValidate(repaired.text)
+          return { result, usage, rawText: repaired.text, attempts: attempt + 1 }
+        } catch (repairError) {
+          lastError = repairError
+          previousIssue = correctionGuidance(repairError)
+        }
+      }
       if (attempt < STRUCTURED_FORMAT_ATTEMPTS) {
         options.onRetry?.({ stage: options.stage, retry: attempt, maxRetries: STRUCTURED_FORMAT_RETRIES })
       }

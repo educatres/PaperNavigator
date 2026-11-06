@@ -11,6 +11,7 @@ PaperNavigator 是以「來源可追溯」為核心的 AI 論文快速閱讀導�
 - 每筆重要事實保留 evidence、PDF 實體頁、短摘錄與 matched／unverified／mismatch 狀態。
 - 2–10 篇比較、可比性標籤、percentage points 與 relative % 分開計算。
 - 個人筆記、IndexedDB 保存、Markdown／CSV／JSON／BibTeX／RIS 匯出與 JSON 回復。
+- 第三遍會合併第一遍、第二遍、筆記與螢光重點重新分析；格式不符時先交由格式化 LLM 修復 JSON。
 - references 待驗證清單、Crossref DOI 核對、共引線索與 PDF 圈選 AI 摘要。
 - PDF 原檔本機保存、重新整理自動恢復，以及可連續捲動、縮放與可選取文字的黃、綠、粉紅、淺藍螢光標記。
 - 每筆螢光標記可改色、刪除、產生 Markdown AI 摘要與翻譯，結果會保存在原文下方並可匯出。

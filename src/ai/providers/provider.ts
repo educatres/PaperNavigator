@@ -213,13 +213,13 @@ export async function analyzeImageRegion(config: ProviderConfig, dataUrl: string
   return body.choices?.[0]?.message?.content ?? ''
 }
 
-export async function generateText(config: ProviderConfig, prompt: string, signal?: AbortSignal): Promise<{ text: string; usage: AnalysisUsage }> {
+export async function generateText(config: ProviderConfig, prompt: string, signal?: AbortSignal, jsonSchema?: object): Promise<{ text: string; usage: AnalysisUsage }> {
   if (!config.apiKey.trim() || !config.modelId) throw new Error('請先測試連線並選擇模型。')
   const base = config.baseUrl.replace(/\/$/, '')
   if (config.id === 'google') {
     const body = await fetchWithRetry(`${base}/models/${encodeURIComponent(config.modelId)}:generateContent`, {
       method: 'POST', headers: googleHeaders(config.apiKey),
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 2048 } }),
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS }] }, contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 8192, ...(jsonSchema ? { responseMimeType: 'application/json', responseJsonSchema: jsonSchema } : {}) } }),
     }, signal)
     const text = googleText(body).trim()
     if (!text) throw new Error('模型已回應，但沒有可讀取的文字內容。')
