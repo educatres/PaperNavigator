@@ -120,6 +120,32 @@ describe('Best-effort structured response compatibility', () => {
     expect(parsed.observations[0]).toMatchObject({ methodName: 'Method A', metricName: 'Accuracy', rawValue: '92%' })
   })
 
+  it('recovers keyed table rows and compact observation maps', () => {
+    const parsed = tableAnalysisSchema.parse(normalizeTableResponse({ data: { tableAnalysis: {
+      tableTitle: '主要結果',
+      headers: [{ name: '方法' }, { label: 'Accuracy' }],
+      rows: [{ cells: { 方法: 'Ours', Accuracy: { display: '92%', is_bold: true } } }, { 方法: 'Baseline', Accuracy: '88%' }],
+      observations: [{ method: 'Ours', metrics: { Accuracy: '92%' } }, { method: 'Baseline', metrics: { Accuracy: '88%' } }],
+    } } }))
+
+    expect(parsed.columns).toEqual(['方法', 'Accuracy'])
+    expect(parsed.rows).toEqual([
+      [{ raw: 'Ours', emphasized: false }, { raw: '92%', emphasized: true }],
+      [{ raw: 'Baseline', emphasized: false }, { raw: '88%', emphasized: false }],
+    ])
+    expect(parsed.observations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ methodName: 'Ours', metricName: 'Accuracy', rawValue: '92%' }),
+      expect.objectContaining({ methodName: 'Baseline', metricName: 'Accuracy', rawValue: '88%' }),
+    ]))
+
+    const single = tableAnalysisSchema.parse(normalizeTableResponse({ observations: { method: 'Ours', metric: 'Accuracy', value: '92%' } }))
+    expect(single.observations).toHaveLength(1)
+    expect(single.observations[0]).toMatchObject({ methodName: 'Ours', metricName: 'Accuracy', rawValue: '92%' })
+
+    const oneRow = tableAnalysisSchema.parse(normalizeTableResponse({ headers: ['方法', 'Accuracy'], rows: { method: 'Ours', Accuracy: '92%' } }))
+    expect(oneRow.rows).toEqual([[{ raw: 'Ours', emphasized: false }, { raw: '92%', emphasized: false }]])
+  })
+
   it('allows every analysis stage to omit non-returned sections', () => {
     expect(() => validatePass1({}, 1, 'paper-1')).not.toThrow()
     expect(() => pass2Schema.parse(normalizePass2Response({}))).not.toThrow()

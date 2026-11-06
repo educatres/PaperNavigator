@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, Dispatch, SetStateAction } from 'react'
 import { PdfViewer } from './components/pdf/PdfViewer'
-import type { AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
+import type { AiRegionSummary, AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
 import { comparisonRows, compareRows } from './domain/comparison'
 import type { ComparisonRow } from './domain/comparison'
-import { analyzePass1, analyzePass2, analyzePass3, analyzeTable } from './ai/orchestrator/analysis'
+import { analyzePass1, analyzePass2, analyzePass3 } from './ai/orchestrator/analysis'
 import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
 import { roiPrompt } from './ai/prompts/prompts'
@@ -14,13 +14,12 @@ import { exportBibTeX, exportComparisonCsv, exportPaperMarkdown, exportProjectJs
 import { clearAllSettings, readActiveProvider, readProviderConfig, saveProviderConfig } from './storage/apiKeyStore'
 import { coCitationRows, verifyCitation } from './research/citations'
 
-type TabId = 'overview' | 'pass1' | 'pass2' | 'tables' | 'pass3' | 'compare' | 'research' | 'notes'
+type TabId = 'overview' | 'pass1' | 'pass2' | 'pass3' | 'compare' | 'research' | 'notes'
 
 const TABS: Array<{ id: TabId; label: string; phase: string }> = [
   { id: 'overview', label: '總覽', phase: 'P0' },
   { id: 'pass1', label: '第一遍', phase: 'P1' },
   { id: 'pass2', label: '第二遍', phase: 'P1' },
-  { id: 'tables', label: '數據分析', phase: 'P1' },
   { id: 'pass3', label: '第三遍', phase: 'P3' },
   { id: 'compare', label: '跨篇比較', phase: 'P2' },
   { id: 'research', label: '研究延伸', phase: 'P4' },
@@ -114,8 +113,6 @@ export default function App() {
   const [message, setMessage] = useState('先匯入一篇 PDF，再測試模型連線。')
   const [error, setError] = useState('')
   const [lastUsage, setLastUsage] = useState<AnalysisUsage | null>(null)
-  const [tableLabel, setTableLabel] = useState('Table 1')
-  const [tablePage, setTablePage] = useState(0)
   const [userPlan, setUserPlan] = useState('')
   const [noteText, setNoteText] = useState('')
   const [noteVerification, setNoteVerification] = useState<'checked' | 'pending' | 'concern'>('pending')
@@ -227,7 +224,7 @@ export default function App() {
           id, projectId: bundle.project.id, sha256: data.sha256, filename: data.filename,
           title: data.title, authors: data.author ? data.author.split(/[,;]/).map((item) => item.trim()).filter(Boolean) : [],
           year: null, doi: null, pageCount: data.pageCount, size: data.size, uploadTime: now,
-          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], highlights: [],
+          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], highlights: [], aiRegionSummaries: [],
         })
       }
       if (nextPapers.length) {
@@ -352,24 +349,16 @@ export default function App() {
     })
   }
 
-  const runTable = () => {
-    if (tablePage < 0 || tablePage >= (selectedPaper?.pageCount ?? 0)) { setError('表格頁碼超出 PDF 範圍。'); return }
-    void startJob('正在分析指定表格', async (signal) => {
-      const response = await analyzeTable(config, selectedDocument!, selectedPaper!.id, tableLabel, tablePage, signal, handleFormatRetry)
-      setLastUsage(response.usage)
-      updatePaper(selectedPaper!.id, (paper) => ({
-        ...paper, tableAnalyses: [...paper.tableAnalyses, response.result],
-        observations: [...paper.observations, ...response.result.observations],
-        evidence: [...paper.evidence, ...response.result.evidence],
-      }))
-    })
-  }
-
   const analyzeRegion = async (dataUrl: string, targetPage: number) => {
     if (!config.apiKey || !config.modelId) throw new Error('請先設定並測試 AI 連線。')
     setBusy('正在分析圈選區域…')
     try { return await analyzeImageRegion(config, dataUrl, roiPrompt(targetPage, ''), undefined) }
     finally { setBusy('') }
+  }
+
+  const addAiRegionSummary = (summary: AiRegionSummary) => {
+    if (!selectedPaper) return
+    updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: [...(paper.aiRegionSummaries ?? []), summary] }))
   }
 
   const jumpToEvidence = (evidenceId: string) => {
@@ -507,12 +496,11 @@ export default function App() {
           {!selectedDocument && <div className="reattach-banner"><div><strong>找不到已保存的原始 PDF</strong><p>可能是瀏覽器儲存空間已被清除。請選擇同一檔案，系統會用 SHA-256 核對並重新保存。</p></div><button className="secondary-button" onClick={() => reattachRef.current?.click()}>重新附檔</button><input ref={reattachRef} hidden type="file" accept="application/pdf,.pdf" onChange={(event) => void reattach(event.target.files?.[0])} /></div>}
           {tab === 'overview' && <Overview paper={selectedPaper} document={selectedDocument} onPass1={runPass1} onPass2={runPass2} onPass3={runPass3} onJump={(page) => setPageIndex(page)} />}
           {tab === 'pass1' && <Pass1View paper={selectedPaper} onRun={runPass1} onEvidence={jumpToEvidence} />}
-          {tab === 'pass2' && <Pass2View paper={selectedPaper} onRun={runPass2} onEvidence={jumpToEvidence} onTable={(label, page) => { setTableLabel(label); setTablePage(page ?? 0); setPageIndex(page ?? 0); setTab('tables') }} />}
-          {tab === 'tables' && <TablesView paper={selectedPaper} label={tableLabel} page={tablePage} setLabel={setTableLabel} setPage={setTablePage} onRun={runTable} onJump={setPageIndex} />}
+          {tab === 'pass2' && <Pass2View paper={selectedPaper} onRun={runPass2} onEvidence={jumpToEvidence} onJump={(page) => page !== null && setPageIndex(page)} />}
           {tab === 'pass3' && <Pass3View paper={selectedPaper} userPlan={userPlan} setUserPlan={setUserPlan} onRun={runPass3} />}
           {tab === 'compare' && <CompareView papers={bundle.papers} selectedIds={compareIds} setSelectedIds={setCompareIds} query={compareQuery} setQuery={setCompareQuery} rows={rows} comparison={comparison} onExport={() => exportComparisonCsv(selectedComparePapers)} onSelectPaper={(id: string, page: number | null) => { setSelectedId(id); setPageIndex(page ?? 0) }} />}
           {tab === 'research' && <ResearchView papers={bundle.papers} coCitations={coCitations} onVerify={(paperId: string, citationId: string) => void verifyReference(paperId, citationId)} onBib={() => exportBibTeX(bundle.papers)} onRis={() => exportRis(bundle.papers)} />}
-          {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onMarkdown={() => exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={() => { if (window.confirm('清除瀏覽器中的整個專案？請先匯出 JSON 備份。')) void clearBundle().then(() => { setBundle(emptyBundle()); setDocuments({}); setSelectedId('') }) }} />}
+          {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onDeleteAiSummary={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: (paper.aiRegionSummaries ?? []).filter((summary) => summary.id !== id) }))} onJump={setPageIndex} onMarkdown={() => exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={() => { if (window.confirm('清除瀏覽器中的整個專案？請先匯出 JSON 備份。')) void clearBundle().then(() => { setBundle(emptyBundle()); setDocuments({}); setSelectedId('') }) }} />}
         </div>}
       </section>
       <PdfViewer
@@ -522,6 +510,7 @@ export default function App() {
         highlights={selectedPaper?.highlights ?? []}
         onPageChange={setPageIndex}
         onAnalyzeRegion={analyzeRegion}
+        onAddAiRegionSummary={addAiRegionSummary}
         onAddHighlight={(highlight: PdfHighlight) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: [...paper.highlights, highlight] }))}
         onDeleteHighlight={(id: string) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))}
       />
@@ -551,14 +540,10 @@ function Pass1View({ paper, onRun, onEvidence }: { paper: Paper; onRun: () => vo
   return <div className="section-stack"><section className="lead-summary"><span className="eyebrow">ONE-SENTENCE MAP</span><h2>{data.oneSentenceTopic}</h2><p>{data.researchQuestion}</p><div className="tag-row"><span>{data.field}</span><span>{data.paperType}</span><span className={`decision ${data.readingDecision.recommendation}`}>{decisionLabel[data.readingDecision.recommendation]}</span></div><p className="decision-reason">AI 建議：{data.readingDecision.reason}。最終閱讀決定仍由你判斷。</p></section><section><div className="section-title"><div><span className="eyebrow">KESHAV'S FIVE CS</span><h2>五個 C</h2></div><button className="small-button" onClick={onRun}>重新分析</button></div><div className="five-c-grid">{data.fiveCs.map((item, index) => <article key={item.name}><span>0{index + 1}</span><h3>{item.name}</h3><p>{item.summary}</p><EvidenceButtons ids={item.evidenceIds} paper={paper} onEvidence={onEvidence} /></article>)}</div></section><div className="two-column"><section className="content-card"><span className="eyebrow">CONTRIBUTIONS</span><h2>主要創新</h2><ol>{data.contributions.map((item) => <li key={item}>{item}</li>)}</ol></section><section className="content-card"><span className="eyebrow">READING FRICTION</span><h2>待釐清概念</h2><ul>{data.unclearConcepts.map((item) => <li key={item}>{item}</li>)}</ul></section></div></div>
 }
 
-function Pass2View({ paper, onRun, onEvidence, onTable }: { paper: Paper; onRun: () => void; onEvidence: (id: string) => void; onTable: (label: string, page: number | null) => void }) {
+function Pass2View({ paper, onRun, onEvidence, onJump }: { paper: Paper; onRun: () => void; onEvidence: (id: string) => void; onJump: (page: number | null) => void }) {
   const data = paper.pass2
   if (!data) return <EmptyAnalysis title="第二遍尚未分析" text="完成第一遍後，再擷取方法、實驗設計、圖表與逐筆結果。" action="深入第二遍" onRun={onRun} disabled={!paper.pass1} />
-  return <div className="section-stack"><div className="section-title"><div><span className="eyebrow">METHOD & EVIDENCE</span><h2>方法與實驗設計</h2></div><button className="small-button" onClick={onRun}>重新分析</button></div><div className="two-column"><section className="content-card"><h3>研究動機</h3><p>{data.motivation}</p><h3>問題定義</h3><p>{data.problemDefinition}</p><h3>輸入與輸出</h3><p>{data.inputOutput}</p></section><section className="content-card"><h3>方法流程</h3><ol className="method-steps">{data.methodSteps.map((item, index) => <li key={item}><span>{index + 1}</span><p>{item}</p></li>)}</ol></section></div><section className="content-card"><h3>資料集與評估</h3><div className="data-table-wrap"><table><thead><tr><th>資料集</th><th>版本／規模</th><th>Split</th><th>外部驗證</th><th>洩漏風險</th><th>狀態</th></tr></thead><tbody>{data.datasets.map((item, index) => <tr key={`${item.name}-${index}`}><td>{item.name}</td><td>{[item.version, item.size].filter(Boolean).join(' · ') || '未報告'}</td><td>{item.split ?? '未報告'}</td><td>{item.externalValidation ?? '未報告'}</td><td>{item.leakageRisk ?? '未報告'}</td><td><span className={`status-pill ${item.status}`}>{item.status}</span><EvidenceButtons ids={item.evidenceIds} paper={paper} onEvidence={onEvidence} /></td></tr>)}</tbody></table></div></section><section className="content-card"><h3>Figure / Table 索引</h3><div className="index-list">{[...data.tables, ...data.figures].map((item) => <button key={`${item.label}-${item.pdfPageIndex}`} onClick={() => onTable(item.label, item.pdfPageIndex)}><strong>{item.label}</strong><span>{item.title}<small>{item.interpretation}</small></span><b>{item.pdfPageIndex === null ? '?' : `p.${item.pdfPageIndex + 1}`}</b></button>)}</div></section><section className="content-card"><h3>作者主張 → 證據 → 限制</h3><div className="claim-list">{data.claims.map((item, index) => <article key={`${item.claim}-${index}`}><strong>{item.claim}</strong><p><b>證據：</b>{item.support}</p><p><b>限制：</b>{item.limitation}</p><EvidenceButtons ids={item.evidenceIds} paper={paper} onEvidence={onEvidence} /></article>)}</div></section><details className="guide-questions"><summary>學生引導問題（先思考再展開）</summary><ol>{data.guideQuestions.map((item) => <li key={item}>{item}</li>)}</ol></details></div>
-}
-
-function TablesView({ paper, label, page, setLabel, setPage, onRun, onJump }: { paper: Paper; label: string; page: number; setLabel: (value: string) => void; setPage: (value: number) => void; onRun: () => void; onJump: (value: number) => void }) {
-  return <div className="section-stack"><section className="analysis-control"><div><span className="eyebrow">THREE-STEP TABLE ANALYSIS</span><h2>指定表格分析</h2><p>先抽取原始格內容，再分析本文所報告的最佳值、trade-offs 與 limitations。</p></div><div className="inline-form"><label>Table / Figure<input value={label} onChange={(event) => setLabel(event.target.value)} /></label><label>PDF 實體頁<input type="number" min={1} max={paper.pageCount} value={page + 1} onChange={(event) => setPage(Math.max(0, Number(event.target.value) - 1))} /></label><button className="primary-button" onClick={onRun}>抽取並分析</button></div></section>{paper.tableAnalyses.length === 0 ? <EmptyAnalysis title="尚未分析指定表格" text="可從第二遍的圖表索引帶入，或手動輸入標號與 PDF 實體頁。" /> : paper.tableAnalyses.map((analysis) => <section className="content-card table-analysis" key={analysis.id}><div className="card-heading"><div><span className="eyebrow">{analysis.label} · PDF p.{analysis.pdfPageIndex + 1}</span><h2>{analysis.title}</h2></div><button className="small-button" onClick={() => onJump(analysis.pdfPageIndex)}>看原文</button></div><div className="data-table-wrap"><table><thead><tr>{analysis.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{analysis.rows.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex} className={cell.emphasized ? 'emphasized' : ''}>{cell.raw}</td>)}</tr>)}</tbody></table></div>{analysis.footnotes.length > 0 && <p className="table-footnotes">表註：{analysis.footnotes.join('；')}</p>}<div className="three-step-grid"><article><span>A</span><h3>SOTA 與定位</h3><ul>{analysis.positioning.map((item) => <li key={item}>{item}</li>)}</ul></article><article><span>B</span><h3>Trade-offs</h3><ul>{analysis.tradeoffs.map((item) => <li key={item}>{item}</li>)}</ul></article><article><span>C</span><h3>Limitations / Ablation</h3><ul>{analysis.limitations.map((item) => <li key={item}>{item}</li>)}</ul></article></div></section>)}</div>
+  return <div className="section-stack"><div className="section-title"><div><span className="eyebrow">METHOD & EVIDENCE</span><h2>方法與實驗設計</h2></div><button className="small-button" onClick={onRun}>重新分析</button></div><div className="two-column"><section className="content-card"><h3>研究動機</h3><p>{data.motivation}</p><h3>問題定義</h3><p>{data.problemDefinition}</p><h3>輸入與輸出</h3><p>{data.inputOutput}</p></section><section className="content-card"><h3>方法流程</h3><ol className="method-steps">{data.methodSteps.map((item, index) => <li key={item}><span>{index + 1}</span><p>{item}</p></li>)}</ol></section></div><section className="content-card"><h3>資料集與評估</h3><div className="data-table-wrap"><table><thead><tr><th>資料集</th><th>版本／規模</th><th>Split</th><th>外部驗證</th><th>洩漏風險</th><th>狀態</th></tr></thead><tbody>{data.datasets.map((item, index) => <tr key={`${item.name}-${index}`}><td>{item.name}</td><td>{[item.version, item.size].filter(Boolean).join(' · ') || '未報告'}</td><td>{item.split ?? '未報告'}</td><td>{item.externalValidation ?? '未報告'}</td><td>{item.leakageRisk ?? '未報告'}</td><td><span className={`status-pill ${item.status}`}>{item.status}</span><EvidenceButtons ids={item.evidenceIds} paper={paper} onEvidence={onEvidence} /></td></tr>)}</tbody></table></div></section><section className="content-card"><h3>Figure / Table 索引</h3><div className="index-list">{[...data.tables, ...data.figures].map((item) => <button key={`${item.label}-${item.pdfPageIndex}`} onClick={() => onJump(item.pdfPageIndex)}><strong>{item.label}</strong><span>{item.title}<small>{item.interpretation}</small></span><b>{item.pdfPageIndex === null ? '?' : `p.${item.pdfPageIndex + 1}`}</b></button>)}</div></section><section className="content-card"><h3>作者主張 → 證據 → 限制</h3><div className="claim-list">{data.claims.map((item, index) => <article key={`${item.claim}-${index}`}><strong>{item.claim}</strong><p><b>證據：</b>{item.support}</p><p><b>限制：</b>{item.limitation}</p><EvidenceButtons ids={item.evidenceIds} paper={paper} onEvidence={onEvidence} /></article>)}</div></section><details className="guide-questions"><summary>學生引導問題（先思考再展開）</summary><ol>{data.guideQuestions.map((item) => <li key={item}>{item}</li>)}</ol></details></div>
 }
 
 function Pass3View({ paper, userPlan, setUserPlan, onRun }: { paper: Paper; userPlan: string; setUserPlan: (value: string) => void; onRun: () => void }) {
@@ -606,13 +591,16 @@ interface NotesViewProps {
   setVerification: (value: 'checked' | 'pending' | 'concern') => void
   onAdd: () => void
   onDelete: (id: string) => void
+  onDeleteAiSummary: (id: string) => void
+  onJump: (page: number) => void
   onMarkdown: () => void
   onJson: () => void
   onClear: () => void
 }
 
-function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onMarkdown, onJson, onClear }: NotesViewProps) {
-  return <div className="section-stack"><section className="content-card"><div className="card-heading"><div><span className="eyebrow">YOUR ANNOTATIONS</span><h2>個人筆記</h2></div></div><textarea className="note-input" value={text} onChange={(event) => setText(event.target.value)} placeholder="記錄疑問、驗證結果或自己的推論；不會覆蓋 AI 原始輸出。" /><div className="note-actions"><select value={verification} onChange={(event) => setVerification(event.target.value as 'checked' | 'pending' | 'concern')}><option value="pending">待查證</option><option value="checked">已查原文</option><option value="concern">有疑慮</option></select><button className="primary-button compact" disabled={!text.trim()} onClick={onAdd}>加入筆記</button></div><div className="notes-list">{paper.notes.map((note) => <article key={note.id}><span className={`note-state ${note.verification}`}>{note.verification === 'checked' ? '已查原文' : note.verification === 'concern' ? '有疑慮' : '待查證'}</span><p>{note.body}</p><button className="danger-link" onClick={() => onDelete(note.id)}>刪除</button></article>)}</div></section><section className="content-card"><h2>匯出與資料管理</h2><div className="export-grid"><button onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>單篇三遍分析、證據與筆記</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>會一併刪除瀏覽器內保存的 PDF 原檔</span></button></div><p className="fine-print">所有匯出均排除 API Key 與 PDF 原檔。CSV 匯出會防止試算表公式注入。</p></section></div>
+function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onDeleteAiSummary, onJump, onMarkdown, onJson, onClear }: NotesViewProps) {
+  const summaries = paper.aiRegionSummaries ?? []
+  return <div className="section-stack"><section className="content-card"><div className="card-heading"><div><span className="eyebrow">YOUR ANNOTATIONS</span><h2>個人筆記</h2></div></div><textarea className="note-input" value={text} onChange={(event) => setText(event.target.value)} placeholder="記錄疑問、驗證結果或自己的推論；不會覆蓋 AI 原始輸出。" /><div className="note-actions"><select value={verification} onChange={(event) => setVerification(event.target.value as 'checked' | 'pending' | 'concern')}><option value="pending">待查證</option><option value="checked">已查原文</option><option value="concern">有疑慮</option></select><button className="primary-button compact" disabled={!text.trim()} onClick={onAdd}>加入筆記</button></div><div className="notes-list">{paper.notes.map((note) => <article key={note.id}><span className={`note-state ${note.verification}`}>{note.verification === 'checked' ? '已查原文' : note.verification === 'concern' ? '有疑慮' : '待查證'}</span><p>{note.body}</p><button className="danger-link" onClick={() => onDelete(note.id)}>刪除</button></article>)}</div></section><section className="content-card"><div className="card-heading"><div><span className="eyebrow">SOURCE ANNOTATIONS</span><h2>螢光筆、AI 摘要與文字定位</h2></div></div><div className="annotation-summary"><strong>{paper.highlights.length} 個螢光標記</strong><strong>{summaries.length} 個 AI 圈選摘要</strong><strong>{paper.evidence.length} 個來源定位</strong></div><div className="annotation-list"><h3>螢光筆</h3>{paper.highlights.length ? paper.highlights.map((highlight, index) => <article key={highlight.id}><span className={`annotation-color ${highlight.color}`} /><p>{highlight.text || `文字標記 ${index + 1}`}</p><button className="small-button" onClick={() => onJump(highlight.pdfPageIndex)}>PDF p.{highlight.pdfPageIndex + 1}</button></article>) : <p>尚未建立螢光標記。</p>}<h3>AI 圈選摘要</h3>{summaries.length ? summaries.map((summary) => <article key={summary.id}><p>{summary.summary}</p><button className="small-button" onClick={() => onJump(summary.pdfPageIndex)}>PDF p.{summary.pdfPageIndex + 1}</button><button className="danger-link" onClick={() => onDeleteAiSummary(summary.id)}>刪除</button></article>) : <p>尚未建立 AI 圈選摘要。</p>}<h3>文字定位</h3>{paper.evidence.length ? paper.evidence.map((item) => <article key={item.id}><p>{item.quote || item.objectLabel || '未提供摘錄'}</p>{item.pdfPageIndex === null ? <span className="missing-chip">頁碼待確認</span> : <button className="small-button" onClick={() => onJump(item.pdfPageIndex!)}>PDF p.{item.pdfPageIndex + 1}</button>}</article>) : <p>尚未建立來源定位。</p>}</div></section><section className="content-card"><h2>匯出與資料管理</h2><div className="export-grid"><button onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>單篇三遍分析、證據、標記與 AI 摘要</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>會一併刪除瀏覽器內保存的 PDF 原檔</span></button></div><p className="fine-print">所有匯出均排除 API Key 與 PDF 原檔。CSV 匯出會防止試算表公式注入。</p></section></div>
 }
 
 function EmptyAnalysis({ title, text, action, onRun, disabled }: { title: string; text: string; action?: string; onRun?: () => void; disabled?: boolean }) {

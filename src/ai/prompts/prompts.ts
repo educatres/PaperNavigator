@@ -25,10 +25,10 @@ export function pass3Prompt(pass1: Pass1Result, pass2: Pass2Result, userPlan: st
 }
 
 export function tablePrompt(label: string, pageIndex: number, pageText: string) {
-  return `只分析指定的 ${label || '表格'}（PDF page index ${pageIndex}）。先抽取 columns、rows 原始字串、可靠時的 emphasized 線索、footnotes 與 observations，再做三步分析：
+  return `只分析指定的 ${label || '表格'}（PDF page index ${pageIndex}）。輸出必須是單一 JSON object，禁止再包 result、data、tableAnalysis 或其他外層 key；不要輸出 Markdown 或說明文字。所有表格欄位都要存在：columns 是字串陣列，rows 是由 {"raw":字串,"emphasized":布林} 組成的二維陣列；沒有資料用空陣列，未知值用 null 或 schema 指定的明確缺值狀態。請先抽取 columns、rows 原始字串、可靠時的 emphasized 線索、footnotes 與 observations，再做三步分析：
 Step A：僅指出「本文所報告的比較結果」與表內定位，不得稱全球 SOTA；區分本文方法、重現 baseline、引用前人數值。
 Step B：只比較有報告的效能與成本欄位，百分比差異區分 percentage points 與 relative percent；缺值寫未報告。
-Step C：檢查 split、pretraining、外部資料、硬體、統計與消融；最大下降只能稱「在所測設定中最敏感」，不得宣稱因果核心。每筆結果以 evidenceIds 連到 evidence，短摘錄需出自本頁。
+Step C：檢查 split、pretraining、外部資料、硬體、統計與消融；最大下降只能稱「在所測設定中最敏感」，不得宣稱因果核心。每筆結果以 evidenceIds 連到 evidence，短摘錄需出自本頁。若頁面沒有可可靠抽取的表格，保留空的 columns／rows／observations，並在 limitations 說明需人工核對。
 頁面文字：${wrapUntrusted('target-page-text', pageText)}`
 }
 

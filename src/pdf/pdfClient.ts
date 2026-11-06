@@ -1,6 +1,7 @@
 import * as pdfjs from 'pdfjs-dist'
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
+import { TextLayer } from 'pdfjs-dist'
 import type { PdfDocumentData, SourceEvidence } from '../domain/types'
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl
@@ -52,7 +53,7 @@ export async function openPdf(bytes: Uint8Array) {
   return pdfjs.getDocument({ data: bytes.slice() }).promise
 }
 
-export async function renderPdfPage(pdf: PDFDocumentProxy, pageNumber: number, canvas: HTMLCanvasElement, maxWidth: number) {
+export async function renderPdfPage(pdf: PDFDocumentProxy, pageNumber: number, canvas: HTMLCanvasElement, maxWidth: number, textLayer?: HTMLElement) {
   const page = await pdf.getPage(pageNumber)
   const unscaled = page.getViewport({ scale: 1 })
   const scale = Math.min(2, Math.max(0.5, maxWidth / unscaled.width))
@@ -65,6 +66,15 @@ export async function renderPdfPage(pdf: PDFDocumentProxy, pageNumber: number, c
   const context = canvas.getContext('2d')
   if (!context) throw new Error('瀏覽器無法建立 PDF 畫布。')
   await page.render({ canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0], canvas }).promise
+  if (textLayer) {
+    textLayer.replaceChildren()
+    textLayer.style.setProperty('--total-scale-factor', String(scale))
+    textLayer.style.width = `${Math.floor(viewport.width)}px`
+    textLayer.style.height = `${Math.floor(viewport.height)}px`
+    const content = await page.getTextContent()
+    const layer = new TextLayer({ textContentSource: content, container: textLayer, viewport })
+    await layer.render()
+  }
 }
 
 export function pagesForPrompt(data: PdfDocumentData, maxChars = 150_000) {

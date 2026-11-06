@@ -10,7 +10,7 @@
 
 ## Phase 1｜可用 MVP
 
-- 書架、PDF 原檔持久化、多色螢光標記、第一遍、相容精簡回應的第二遍、表格三步分析、Evidence 跳頁、筆記、Markdown／JSON：完成。
+- 書架、PDF 原檔持久化、多色螢光標記、第一遍、相容精簡回應的第二遍、Figure／Table 定位、Evidence 跳頁、筆記、Markdown／JSON：完成。
 
 ## Phase 2｜比較
 
@@ -22,4 +22,4 @@
 
 ## Phase 4｜進階
 
-- ROI 圈選、citation list、Crossref、co-citation、BibTeX／RIS、分享摘要：完成。
+- citation list、Crossref、co-citation、BibTeX／RIS、分享摘要：完成。

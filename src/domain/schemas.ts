@@ -165,7 +165,7 @@ function evidenceIds(value: unknown) {
 }
 
 function normalizeEvidence(value: unknown) {
-  const rows = Array.isArray(value) ? value : []
+  const rows = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value]
   return rows.map((item, index) => {
     const source = record(item)
     const explicitIndex = integerValue(first(source, ['pdfPageIndex', 'pageIndex']))
@@ -314,6 +314,108 @@ function normalizeMetricObservation(value: unknown, index: number) {
     status: statusValue(first(row, ['status', 'informationStatus'])),
     evidenceIds: evidenceIds(first(row, ['evidenceIds', 'evidence', 'sources'])),
   }
+}
+
+function tableCell(value: unknown) {
+  const cell = record(value)
+  const rawValue = first(cell, ['raw', 'value', 'text', 'content', 'display', 'formatted', 'cell'])
+  const raw = rawValue === undefined ? text(value) : text(rawValue)
+  return {
+    raw,
+    emphasized: booleanValue(first(cell, ['emphasized', 'bold', 'isBest', 'is_bold', 'isBold', 'highlighted', 'highlight'])),
+  }
+}
+
+function tableColumnList(value: unknown) {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      const column = record(item)
+      return text(first(column, ['name', 'label', 'title', 'header', 'key']), text(item))
+    }).filter(Boolean)
+  }
+  const object = record(value)
+  const nested = first(object, ['columns', 'headers', 'items', 'values'])
+  if (nested !== undefined && nested !== value) return tableColumnList(nested)
+  if (Object.keys(object).length) return Object.values(object).map((item) => text(item)).filter(Boolean)
+  const single = text(value)
+  return single ? single.split(/\n|;|,/).map((item) => item.trim()).filter(Boolean) : []
+}
+
+function tableRowList(value: unknown, columns: string[] = []): unknown[] {
+  if (Array.isArray(value)) return value
+  if (value === undefined || value === null) return []
+  const object = record(value)
+  const nested = first(object, ['rows', 'dataRows', 'items', 'values'])
+  if (nested !== undefined && nested !== value) return tableRowList(nested, columns)
+  const keys = Object.keys(object).map((key) => key.replace(/[_\s-]/g, '').toLowerCase())
+  const columnKeys = columns.map((column) => column.replace(/[_\s-]/g, '').toLowerCase())
+  if (keys.some((key) => columnKeys.includes(key)) || keys.some((key) => ['cells', 'row', 'method', 'model', 'metric', 'raw', 'value'].includes(key))) return [value]
+  // A frequent compact response is {"Method A": {"Accuracy": "92%"}}.
+  // Keep the key as the first cell so the method name is not discarded.
+  if (Object.keys(object).length) return Object.entries(object).map(([key, row]) => {
+    if (Array.isArray(row)) return [key, ...row]
+    const rowObject = record(row)
+    return { ...rowObject, __rowLabel: key }
+  })
+  return [value]
+}
+
+function tableObservationList(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value
+  if (value === undefined || value === null) return []
+  const object = record(value)
+  const nested = first(object, ['observations', 'results', 'metricObservations', 'items'])
+  if (nested !== undefined && nested !== value) return tableObservationList(nested)
+  if (['methodName', 'method', 'model', 'metricName', 'metric', 'rawValue', 'value', 'result', 'task', 'dataset'].some((key) => object[key] !== undefined)) return [value]
+  if (Object.keys(object).length) return Object.entries(object).flatMap(([methodName, result]) => {
+    if (Array.isArray(result)) return result.map((item) => ({ ...record(item), methodName: record(item).methodName ?? methodName }))
+    const resultObject = record(result)
+    return [{ ...resultObject, methodName: resultObject.methodName ?? methodName, __rawResult: result }]
+  })
+  return [value]
+}
+
+function normalizeTableObservation(value: unknown, index: number): unknown[] {
+  const row = record(value)
+  const metricName = first(row, ['metricName', 'metric'])
+  const nestedMetrics = first(row, ['metrics', 'metricResults', 'results'])
+  if (nestedMetrics !== undefined && (Array.isArray(nestedMetrics) || Object.keys(record(nestedMetrics)).length > 0)) {
+    const methodName = text(first(row, ['methodName', 'method', 'model', 'name']), '未命名方法')
+    if (!Array.isArray(nestedMetrics)) {
+      return Object.entries(record(nestedMetrics)).map(([name, result], metricIndex) => normalizeMetricObservation({
+        ...row,
+        methodName,
+        metricName: name,
+        rawValue: record(result).raw ?? record(result).value ?? result,
+      }, index + metricIndex))
+    }
+    return tableObservationList(nestedMetrics).map((metric, metricIndex) => {
+      const metricRow = record(metric)
+      return normalizeMetricObservation({
+        ...row,
+        ...metricRow,
+        methodName: text(first(metricRow, ['methodName', 'method', 'model']), methodName),
+        metricName: first(metricRow, ['metricName', 'metric', 'name']) ?? text(first(row, ['metricName', 'metric']), '未命名指標'),
+        value: first(metricRow, ['rawValue', 'value', 'result']) ?? first(row, ['rawValue', 'value', 'result']),
+      }, index + metricIndex)
+    })
+  }
+  // Another compact form uses one method object whose metric names are keys:
+  // {"methodName":"Ours", "Accuracy":"92%", "F1":"88%"}.
+  if (metricName === undefined) {
+    const ignored = new Set(['methodName', 'method', 'model', 'task', 'dataset', 'split', 'evidenceIds', '__rawResult'])
+    const metricEntries = Object.entries(row).filter(([key]) => !ignored.has(key))
+    if (metricEntries.length > 0) {
+      return metricEntries.map(([name, result], metricIndex) => normalizeMetricObservation({
+        ...row, metricName: name, rawValue: record(result).raw ?? record(result).value ?? result,
+      }, index + metricIndex))
+    }
+    const rawResult = row.__rawResult
+    if (rawResult !== undefined && (typeof rawResult === 'string' || typeof rawResult === 'number')) {
+      return [normalizeMetricObservation({ ...row, metricName: '未命名指標', rawValue: rawResult }, index)]
+    }
+  }
+  return [normalizeMetricObservation(value, index)]
 }
 
 /**
@@ -481,40 +583,58 @@ export function normalizePass3Response(value: unknown): unknown {
  */
 export function normalizeTableResponse(value: unknown): unknown {
   const outer = record(value)
-  const wrapped = first(outer, ['result', 'tableAnalysis', 'table', 'analysis'])
-  const source = Object.keys(record(wrapped)).length ? record(wrapped) : outer
-  const columns = stringList(first(source, ['columns', 'headers', 'columnNames']))
-  const rawRows = rows(first(source, ['rows', 'dataRows', 'values', 'data']))
+  const wrapperKeys = ['result', 'tableAnalysis', 'table_analysis', 'tableAnalysisResult', 'table_result', 'table', 'analysis', 'data', 'output']
+  let source = outer
+  for (let depth = 0; depth < 3; depth += 1) {
+    const wrapped = first(source, wrapperKeys)
+    const candidate = record(wrapped)
+    if (!Object.keys(candidate).length || candidate === source) break
+    source = candidate
+  }
+  const columns = tableColumnList(first(source, ['columns', 'headers', 'columnNames', 'column_headers']))
+  const rawRows = tableRowList(first(source, ['rows', 'dataRows', 'values', 'data', 'tableRows', 'records']), columns)
   const normalizedRows = rawRows.map((item) => {
     const row = record(item)
     const explicitCells = first(row, ['cells', 'values', 'row'])
     const keyedCells = columns.map((column) => Object.entries(row)
-      .find(([key]) => key.toLowerCase() === column.toLowerCase())?.[1])
+      .find(([key]) => key.toLowerCase() === column.toLowerCase() || key.replace(/[_\s-]/g, '').toLowerCase() === column.replace(/[_\s-]/g, '').toLowerCase())?.[1])
+    const explicitObject = record(explicitCells)
+    const explicitKeyedCells = columns.map((column) => Object.entries(explicitObject)
+      .find(([key]) => key.toLowerCase() === column.toLowerCase() || key.replace(/[_\s-]/g, '').toLowerCase() === column.replace(/[_\s-]/g, '').toLowerCase())?.[1])
+    const unmatchedValues = Object.entries(row)
+      .filter(([key]) => !['__rowLabel', 'rowLabel', 'index', 'rowIndex', 'cells', 'values', 'row'].includes(key)
+        && !columns.some((column) => key.toLowerCase() === column.toLowerCase() || key.replace(/[_\s-]/g, '').toLowerCase() === column.replace(/[_\s-]/g, '').toLowerCase()))
+      .map(([, cell]) => cell)
+    const completedKeyedCells = keyedCells.map((cell) => cell === undefined ? unmatchedValues.shift() : cell)
     const cells = Array.isArray(item) ? item
       : Array.isArray(explicitCells) ? explicitCells
-        : Object.keys(row).length ? (keyedCells.some((cell) => cell !== undefined) ? keyedCells : Object.values(row))
+        : Object.keys(explicitObject).length && explicitKeyedCells.some((cell) => cell !== undefined) ? explicitKeyedCells
+        : Object.keys(row).length ? (completedKeyedCells.some((cell) => cell !== undefined)
+          ? completedKeyedCells
+          : Object.entries(row).filter(([key]) => !['__rowLabel', 'rowLabel', 'index', 'rowIndex'].includes(key)).map(([, cell]) => cell))
           : [item]
-    return cells.map((cell) => {
-      const cellObject = record(cell)
-      return {
-        raw: text(first(cellObject, ['raw', 'value', 'text', 'content']), text(cell)),
-        emphasized: booleanValue(first(cellObject, ['emphasized', 'bold', 'highlighted', 'isBest'])),
-      }
-    })
+    const rowLabel = first(row, ['__rowLabel', 'rowLabel'])
+    const cellsWithLabel = rowLabel !== undefined && !Array.isArray(item) && !Array.isArray(explicitCells) && Object.keys(explicitObject).length === 0
+      && (completedKeyedCells.length === 0 || completedKeyedCells[0] === undefined)
+      ? [rowLabel, ...cells.slice(completedKeyedCells.length > 0 ? 1 : 0)] : cells
+    return cellsWithLabel.map(tableCell)
   }).filter((row) => row.some((cell) => cell.raw))
-  const parsedPage = integerValue(first(source, ['pdfPageIndex', 'pageIndex', 'page']))
+  const parsedPage = integerValue(first(source, ['pdfPageIndex', 'pageIndex', 'page', 'pdfPage', 'pageNumber']))
+
+  const rawObservations = first(source, ['observations', 'results', 'metricObservations', 'metric_observations', 'metrics'])
+  const observations = tableObservationList(rawObservations).flatMap((item, index) => normalizeTableObservation(item, index))
 
   return {
-    label: text(first(source, ['label', 'id', 'tableLabel']), 'Table'),
-    title: text(first(source, ['title', 'caption', 'name']), '未提供標題'),
+    label: text(first(source, ['label', 'id', 'tableLabel', 'table_id']), 'Table'),
+    title: text(first(source, ['title', 'caption', 'name', 'tableTitle']), '未提供標題'),
     pdfPageIndex: parsedPage !== null && parsedPage >= 0 ? parsedPage : 0,
     columns,
     rows: normalizedRows,
-    footnotes: stringList(first(source, ['footnotes', 'notes'])),
-    observations: rows(first(source, ['observations', 'results', 'metricObservations'])).map(normalizeMetricObservation),
-    positioning: stringList(first(source, ['positioning', 'comparisonPositioning', 'findings'])),
-    tradeoffs: stringList(first(source, ['tradeoffs', 'tradeOffs', 'advantagesDisadvantages'])),
-    limitations: stringList(first(source, ['limitations', 'limits', 'caveats'])),
+    footnotes: stringList(first(source, ['footnotes', 'notes', 'tableNotes', 'table_notes'])),
+    observations,
+    positioning: stringList(first(source, ['positioning', 'comparisonPositioning', 'findings', 'sota', 'stepA', 'step_a'])),
+    tradeoffs: stringList(first(source, ['tradeoffs', 'tradeOffs', 'advantagesDisadvantages', 'stepB', 'step_b'])),
+    limitations: stringList(first(source, ['limitations', 'limits', 'caveats', 'ablation', 'stepC', 'step_c'])),
     evidence: normalizeEvidence(first(source, ['evidence', 'sources', 'sourceRefs'])),
   }
 }

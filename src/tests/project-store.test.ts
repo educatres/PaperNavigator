@@ -3,7 +3,7 @@ import { migrateBundle } from '../storage/projectStore'
 import type { ProjectBundle } from '../domain/types'
 
 describe('project storage migration', () => {
-  it('adds an empty highlight list to legacy papers', () => {
+  it('adds empty annotation lists to legacy papers', () => {
     const legacy = {
       schemaVersion: '1.0', exportedAt: '2026-01-01T00:00:00.000Z',
       project: { id: 'project', name: 'Legacy', researchQuestion: '', paperIds: ['paper'], createdAt: '', updatedAt: '' },
@@ -14,6 +14,8 @@ describe('project storage migration', () => {
       comparisons: [],
     } as unknown as ProjectBundle
 
-    expect(migrateBundle(legacy).papers[0].highlights).toEqual([])
+    const paper = migrateBundle(legacy).papers[0]
+    expect(paper.highlights).toEqual([])
+    expect(paper.aiRegionSummaries).toEqual([])
   })
 })

@@ -4,8 +4,8 @@
 
 ```text
 React UI
-  ├─ PDF Viewer / ROI / persistent highlights
-  ├─ Reading passes / Table analysis / Compare
+  ├─ PDF Viewer / text selection / persistent highlights
+  ├─ Reading passes / Compare
   └─ Notes / Citation / Export
           ↓
 Analysis Orchestrator
@@ -29,13 +29,12 @@ UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，�
 1. PDF.js 驗證檔案、取得頁數、逐頁文字與 SHA-256。
 2. Pass 1 只產生鳥瞰與五個 C。
 3. 使用者明確選擇後才執行 Pass 2；產生方法、圖表索引、evidence、observations 與 references。
-4. 指定表格可單獨重做，不需重做整篇分析。
-5. Pass 3 只在 Pass 2 後執行；輸出重建狀態、假設、威脅與可驗證研究題目。
-6. 比較工作台只使用已保存的 observations；篩選不觸發 AI。
+4. Pass 3 只在 Pass 2 後執行；輸出重建狀態、假設、威脅與可驗證研究題目。
+5. 比較工作台只使用已保存的 observations；篩選不觸發 AI。
 
 ## Provider 差異
 
-Google 模式保留 PDF 的視覺、版面與圖表資訊，使用原生 `generateContent` 的 `inlineData` 與 `responseJsonSchema`。CGU Gateway 提供 OpenAI-compatible 文字／視覺端點，因此一般整篇分析先由 PDF.js 抽取帶頁碼文字；圈選圖表時才傳送 PNG data URL。這個差異會影響掃描 PDF 的品質，UI 會顯示本機文字不足警示。
+Google 模式保留 PDF 的視覺、版面與圖表資訊，使用原生 `generateContent` 的 `inlineData` 與 `responseJsonSchema`。CGU Gateway 提供 OpenAI-compatible 文字端點，一般分析由 PDF.js 抽取帶頁碼文字；使用 AI 圈選摘要時才會傳送使用者圈選的 PNG，摘要與文字標記會保存到「筆記與匯出」。
 
 ## 快取與檔案生命週期
 

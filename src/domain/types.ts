@@ -13,6 +13,15 @@ export interface PdfHighlight {
   width: number
   height: number
   color: PdfHighlightColor
+  text?: string
+  createdAt: string
+}
+
+export interface AiRegionSummary {
+  id: string
+  paperId: string
+  pdfPageIndex: number
+  summary: string
   createdAt: string
 }
 
@@ -102,6 +111,7 @@ export interface Paper {
   observations: MetricObservation[]
   notes: UserNote[]
   highlights: PdfHighlight[]
+  aiRegionSummaries?: AiRegionSummary[]
   analysisModel?: string
   promptVersion?: string
 }

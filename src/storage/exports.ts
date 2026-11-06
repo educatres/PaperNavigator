@@ -66,6 +66,16 @@ ${pass3?.reconstruction.map((item) => `- **${item.step}** [${item.status}]：${i
 
 ${pass3?.researchIdeas.map((item) => `- **${item.question}**\n  - 假設：${item.hypothesis}\n  - 最小實驗：${item.minimumExperiment}`).join('\n') ?? '尚未分析'}
 
+## 螢光標記與文字定位
+
+${paper.highlights.map((item, index) => `- 螢光標記 ${index + 1}（${item.color}）：PDF p.${item.pdfPageIndex + 1}${item.text ? `「${item.text}」` : ''}`).join('\n') || '無螢光標記'}
+
+${paper.evidence.map((item) => `- PDF p.${item.pdfPageDisplay ?? '?'}［${item.verificationStatus}］：${item.quote ?? item.objectLabel ?? '未提供摘錄'}`).join('\n') || '無來源定位'}
+
+## AI 圈選摘要
+
+${paper.aiRegionSummaries?.map((item) => `- PDF p.${item.pdfPageIndex + 1}：${item.summary}`).join('\n') || '無 AI 圈選摘要'}
+
 ## 個人筆記
 
 ${paper.notes.map((note) => `- [${note.verification}] ${note.body}`).join('\n') || '無'}

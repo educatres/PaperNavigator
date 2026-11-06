@@ -12,7 +12,7 @@
 
 - PDF 在本機執行 magic bytes、SHA-256、PDF.js 解析與預覽。
 - Google 模式在使用者按下分析後，將 PDF 傳至 Google Gemini。
-- CGU 模式一般分析只傳 PDF.js 擷取文字；圈選區域分析會傳送該區 PNG。
+- CGU 模式一般分析只傳 PDF.js 擷取文字；使用 AI 圈選摘要時會傳送使用者圈選的 PNG。
 - PDF 原檔與解析 metadata 保存在本站來源的 IndexedDB，重新整理後自動恢復；清除本機專案或瀏覽器網站資料會刪除原檔。
 - PDF 文字、引用與圈選內容一律包成不可信資料。系統提示明確禁止接受文件內的 prompt injection。
 

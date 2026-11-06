@@ -278,6 +278,17 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .notes-list { display: grid; gap: 7px; margin-top: 15px; }
 .notes-list article { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 11px; background: #f7f5ef; }
 .notes-list p { margin: 0; }
+.annotation-summary { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+.annotation-summary strong { padding: 6px 8px; color: #536368; background: #f1f0eb; font: 9px 'DM Mono', monospace; }
+.annotation-list { display: grid; gap: 7px; }
+.annotation-list h3 { margin: 8px 0 0; color: #536368; font-size: 11px; }
+.annotation-list article { display: grid; grid-template-columns: auto 1fr auto auto; gap: 8px; align-items: center; padding: 9px; background: #f7f5ef; }
+.annotation-list article p { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.annotation-color { width: 12px; height: 12px; border-radius: 50%; }
+.annotation-color.yellow { background: #f6d349; }
+.annotation-color.green { background: #57be89; }
+.annotation-color.pink { background: #ea7da0; }
+.annotation-color.blue { background: #99ccee; }
 .note-state { padding: 3px 6px; color: #755b27; background: #fff0c9; font-size: 8px; }
 .note-state.checked { color: #2d695e; background: #e1f1ec; }
 .note-state.concern { color: #914434; background: #f7e3dd; }
@@ -296,23 +307,35 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-toolbar span { color: #98a9aa; font: 9px 'DM Mono', monospace; }
 .pdf-toolbar .icon-button, .pdf-toolbar .small-button { color: #d7dfde; border-color: #53656c; background: #31474f; }
 .pdf-viewport { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 14px; text-align: center; }
-.pdf-viewport.mode-highlight, .pdf-viewport.mode-roi { cursor: crosshair; }
+.pdf-viewport.mode-highlight, .pdf-viewport.mode-highlight .pdf-text-layer span { cursor: default; }
+.pdf-viewport.mode-roi { cursor: crosshair; }
 .pdf-canvas-stage { position: relative; display: inline-block; line-height: 0; }
-.pdf-viewport.mode-highlight .pdf-canvas-stage, .pdf-viewport.mode-roi .pdf-canvas-stage { touch-action: none; }
+.pdf-viewport.mode-roi .pdf-canvas-stage { touch-action: none; }
 .pdf-viewport canvas { display: block; margin: 0 auto; background: #fff; box-shadow: 0 4px 18px rgba(21,31,34,.2); }
-.roi-selection { position: absolute; z-index: 2; border: 2px solid var(--accent); background: rgba(214,104,72,.15); pointer-events: none; }
-.highlight-selection { position: absolute; z-index: 4; border: 1px solid rgba(153,119,0,.7); background: rgba(246,211,73,.35); pointer-events: none; }
+.pdf-text-layer { --total-scale-factor: 1; --min-font-size: 1; --min-font-size-inv: calc(1 / var(--min-font-size)); position: absolute; inset: 0; z-index: 2; overflow: hidden; line-height: 1; text-align: initial; text-size-adjust: none; forced-color-adjust: none; transform-origin: 0 0; user-select: none; }
+.pdf-text-layer span, .pdf-text-layer br { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0 0; }
+.pdf-text-layer .markedContent { display: contents; }
+.pdf-text-layer > :not(.markedContent), .pdf-text-layer .markedContent span:not(.markedContent) { z-index: 1; --font-height: 0; font-size: calc(var(--total-scale-factor) * var(--font-height)); --scale-x: 1; --rotate: 0deg; transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
+.pdf-viewport.mode-highlight .pdf-text-layer, .pdf-viewport.mode-highlight .pdf-text-layer span { user-select: text; }
+.pdf-viewport.mode-highlight .pdf-text-layer ::selection { background: rgba(90, 150, 220, .32); }
+.roi-selection { position: absolute; z-index: 4; border: 2px solid var(--accent); background: rgba(214,104,72,.15); pointer-events: none; }
 .pdf-highlight { position: absolute; z-index: 3; min-width: 5px; min-height: 5px; padding: 0; border: 0; border-radius: 2px; mix-blend-mode: multiply; pointer-events: none; }
 .pdf-highlight.erase-ready { z-index: 5; pointer-events: auto; cursor: not-allowed; }
 .pdf-highlight.erase-ready:hover { outline: 2px solid #b44031; outline-offset: 1px; }
-.roi-actions { padding: 10px; border-top: 1px solid #bbb8b1; background: #eeece6; }
-.roi-actions p { margin: 0 0 7px; color: #657376; font-size: 9px; }
 .pdf-annotation-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border-top: 1px solid #bbb8b1; background: #fff8d9; }
 .pdf-annotation-actions p { margin: 0; color: #675e3b; font-size: 9px; }
 .pdf-annotation-actions.erase-hint { background: #f8e8e3; }
+.pdf-viewport.mode-erase,
+.pdf-viewport.mode-erase .pdf-text-layer,
+.pdf-viewport.mode-erase .pdf-text-layer span,
+.pdf-highlight.erase-ready {
+  cursor: url("data:image/svg+xml,%3Csvg xmlns=%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27 width=%2720%27 height=%2720%27 viewBox=%270 0 20 20%27%3E%3Cpath d=%27M4 4L16 16M16 4L4 16%27 stroke=%27%23b44031%27 stroke-width=%272.5%27 stroke-linecap=%27round%27/%3E%3C/svg%3E") 10 10, crosshair;
+}
 .highlight-palette { display: flex; gap: 6px; }
 .highlight-palette button { width: 24px; height: 24px; padding: 0; border: 2px solid rgba(51,62,65,.2); border-radius: 50%; cursor: pointer; }
 .highlight-palette button.active { border-color: var(--ink); box-shadow: 0 0 0 2px #fff; }
+.roi-actions { padding: 10px; border-top: 1px solid #bbb8b1; background: #eeece6; }
+.roi-actions p { margin: 0 0 7px; color: #657376; font-size: 9px; }
 .roi-result { max-height: 150px; overflow-y: auto; margin-top: 8px; padding: 9px; background: #fff; color: #42545b; font-size: 10px; line-height: 1.6; white-space: pre-wrap; }
 .inline-error { padding: 10px; color: #8c3e2e; background: #f9e6df; }
 .empty-viewer { display: grid; place-items: center; color: #7a8484; text-align: center; }
