@@ -11,7 +11,8 @@ React UI
 Analysis Orchestrator
   ├─ Prompt version
   ├─ AIProvider adapter
-  ├─ Zod schema validation
+  ├─ strict JSON + Zod schema validation
+  ├─ format retry（最多三次，重新產生整份回應）
   └─ Evidence verification
           ↓
 Google generateContent       CGU Responses / Chat Completions
@@ -21,7 +22,7 @@ PDF inlineData                  PDF.js extracted page text
 IndexedDB ← ProjectBundle + PDF Blob → JSON / Markdown / CSV / BibTeX / RIS
 ```
 
-UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，`src/ai/providers` 處理傳輸、錯誤、重試與 usage。比較與差異計算位於純函式，AI 不負責做百分比心算。
+UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，並在格式失敗時最多重新要求三次；`src/ai/providers` 處理傳輸、錯誤、網路重試與 usage。格式重做與網路重試分開處理，權限、連線或取消錯誤不會被誤判為 JSON 格式問題。比較與差異計算位於純函式，AI 不負責做百分比心算。
 
 ## 分階段分析
 

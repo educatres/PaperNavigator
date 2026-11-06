@@ -5,6 +5,7 @@ import type { AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, ProjectBundle
 import { comparisonRows, compareRows } from './domain/comparison'
 import type { ComparisonRow } from './domain/comparison'
 import { analyzePass1, analyzePass2, analyzePass3, analyzeTable } from './ai/orchestrator/analysis'
+import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
 import { roiPrompt } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
@@ -193,6 +194,12 @@ export default function App() {
     setMessage(text)
   }
 
+  const handleFormatRetry: FormatRetryHandler = ({ stage, attempt, maxAttempts }) => {
+    const text = `${stage}回傳格式不符，正在要求模型重做（${attempt}/${maxAttempts}）…`
+    setBusy(text)
+    setMessage(text)
+  }
+
   const importPdfs = async (files: File[]) => {
     if (!files.length) return
     setError('')
@@ -311,7 +318,7 @@ export default function App() {
   }
 
   const runPass1 = () => startJob('正在執行第一遍閱讀', async (signal) => {
-    const response = await analyzePass1(config, selectedDocument!, selectedPaper!.id, bundle.project.researchQuestion, signal)
+    const response = await analyzePass1(config, selectedDocument!, selectedPaper!.id, bundle.project.researchQuestion, signal, handleFormatRetry)
     setLastUsage(response.usage)
     updatePaper(selectedPaper!.id, (paper) => ({
       ...paper, pass1: response.result, title: response.result.title ?? paper.title,
@@ -324,7 +331,7 @@ export default function App() {
   const runPass2 = () => {
     if (!selectedPaper?.pass1) { setError('請先完成第一遍閱讀。'); return }
     void startJob('正在執行第二遍閱讀', async (signal) => {
-      const response = await analyzePass2(config, selectedDocument!, selectedPaper.id, selectedPaper.pass1!, signal)
+      const response = await analyzePass2(config, selectedDocument!, selectedPaper.id, selectedPaper.pass1!, signal, handleFormatRetry)
       setLastUsage(response.usage)
       updatePaper(selectedPaper.id, (paper) => ({
         ...paper, pass2: response.result, observations: response.result.observations,
@@ -338,7 +345,7 @@ export default function App() {
   const runPass3 = () => {
     if (!selectedPaper?.pass1 || !selectedPaper.pass2) { setError('請先完成第一遍與第二遍閱讀。'); return }
     void startJob('正在執行第三遍閱讀', async (signal) => {
-      const response = await analyzePass3(config, selectedDocument!, selectedPaper.pass1!, selectedPaper.pass2!, userPlan, signal)
+      const response = await analyzePass3(config, selectedDocument!, selectedPaper.pass1!, selectedPaper.pass2!, userPlan, signal, handleFormatRetry)
       setLastUsage(response.usage)
       updatePaper(selectedPaper.id, (paper) => ({ ...paper, pass3: response.result, analysisModel: `${config.id}:${config.modelId}`, promptVersion: 'pass3.v1' }))
       setTab('pass3')
@@ -348,7 +355,7 @@ export default function App() {
   const runTable = () => {
     if (tablePage < 0 || tablePage >= (selectedPaper?.pageCount ?? 0)) { setError('表格頁碼超出 PDF 範圍。'); return }
     void startJob('正在分析指定表格', async (signal) => {
-      const response = await analyzeTable(config, selectedDocument!, selectedPaper!.id, tableLabel, tablePage, signal)
+      const response = await analyzeTable(config, selectedDocument!, selectedPaper!.id, tableLabel, tablePage, signal, handleFormatRetry)
       setLastUsage(response.usage)
       updatePaper(selectedPaper!.id, (paper) => ({
         ...paper, tableAnalyses: [...paper.tableAnalyses, response.result],

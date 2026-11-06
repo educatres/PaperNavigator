@@ -12,6 +12,15 @@ interface RawGeneration {
   usage: AnalysisUsage
 }
 
+const STRUCTURED_SYSTEM_INSTRUCTIONS = `${SYSTEM_INSTRUCTIONS}
+For structured analysis, return exactly one JSON object. The first non-whitespace character must be { and the last must be }. Never use Markdown fences or add prose before or after the JSON.`
+
+export function structuredOutputContract(schema: object) {
+  return `【固定輸出格式】
+只回傳一個符合下列 JSON Schema 的 JSON object。第一個非空白字元必須是 {，最後一個必須是 }。禁止 Markdown 程式碼區塊、前言、結語、註解與 JSON 以外文字。所有 key 使用 schema 指定名稱；無資料時依 schema 使用 null、空陣列或明確的缺值狀態，不得省略 required 欄位。
+JSON Schema：${JSON.stringify(schema)}`
+}
+
 const wait = (milliseconds: number) => new Promise((resolve) => window.setTimeout(resolve, milliseconds))
 
 function readableHttpError(status: number, detail: string) {
@@ -150,14 +159,15 @@ export async function generateStructured(
 ): Promise<RawGeneration> {
   if (!config.apiKey.trim() || !config.modelId) throw new Error('請先測試連線並選擇模型。')
   const base = config.baseUrl.replace(/\/$/, '')
+  const outputContract = structuredOutputContract(schema)
   if (config.id === 'google') {
     const body = await fetchWithRetry(`${base}/models/${encodeURIComponent(config.modelId)}:generateContent`, {
       method: 'POST', headers: googleHeaders(config.apiKey),
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTIONS }] },
+        systemInstruction: { parts: [{ text: STRUCTURED_SYSTEM_INSTRUCTIONS }] },
         contents: [{ role: 'user', parts: [
           { inlineData: { mimeType: 'application/pdf', data: bytesToBase64(document.bytes) } },
-          { text: prompt },
+          { text: `${prompt}\n\n${outputContract}` },
         ] }],
         generationConfig: { temperature: 0.1, responseMimeType: 'application/json', responseJsonSchema: schema },
       }),
@@ -167,11 +177,11 @@ export async function generateStructured(
     return { text, usage: usageFromGoogle(body) }
   }
   const source = wrapUntrusted('pdf-extracted-text', pagesForPrompt(document))
-  const input = `${prompt}\n\n以下為 PDF.js 本機擷取的逐頁文字；頁面標記是引用定位依據：\n${source}`
+  const input = `${prompt}\n\n以下為 PDF.js 本機擷取的逐頁文字；頁面標記是引用定位依據：\n${source}\n\n${outputContract}`
   if (config.id === 'cgu' && config.modelId !== 'gpt-oss:20b') {
     const body = await fetchWithRetry(`${base}/responses`, {
       method: 'POST', headers: bearerHeaders(config.apiKey),
-      body: JSON.stringify({ model: config.modelId, instructions: SYSTEM_INSTRUCTIONS, input, store: false, max_output_tokens: 8192, reasoning: { effort: 'medium' } }),
+      body: JSON.stringify({ model: config.modelId, instructions: STRUCTURED_SYSTEM_INSTRUCTIONS, input, store: false, max_output_tokens: 8192, reasoning: { effort: 'medium' } }),
     }, signal)
     const text = responsesText(body)
     if (!text) throw new Error('模型已回應，但沒有 JSON 文字內容。')
@@ -179,7 +189,7 @@ export async function generateStructured(
   }
   const body = await fetchWithRetry(`${base}/chat/completions`, {
     method: 'POST', headers: bearerHeaders(config.apiKey),
-    body: JSON.stringify({ model: config.modelId, messages: [{ role: 'system', content: SYSTEM_INSTRUCTIONS }, { role: 'user', content: input }], max_completion_tokens: 8192 }),
+    body: JSON.stringify({ model: config.modelId, messages: [{ role: 'system', content: STRUCTURED_SYSTEM_INSTRUCTIONS }, { role: 'user', content: input }], max_completion_tokens: 8192 }),
   }, signal)
   const text = body.choices?.[0]?.message?.content ?? ''
   if (!text) throw new Error('模型已回應，但沒有 JSON 文字內容。')

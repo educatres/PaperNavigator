@@ -5,11 +5,11 @@
 | 檢查 | 指令 | 目前狀態 |
 | --- | --- | --- |
 | TypeScript strict | `npm.cmd run typecheck` | 通過 |
-| Unit tests | `npm.cmd test` | 24/24 通過 |
+| Unit tests | `npm.cmd test` | 33/33 通過 |
 | Production build | `npm.cmd run build` | 通過 |
 | Dependency audit | `npm.cmd audit --omit=dev` | 0 vulnerabilities |
 
-單元測試涵蓋：90%→92% 的 percentage points／relative %、零基準、資料集不同比較阻擋、硬體差異降級、Pass 1 五個 C、Pass 2 精簡回應相容、Pass 3 與表格部分回應相容、所有分析階段缺少區段、Evidence 頁碼範圍、摘錄正規化核對、CSV 公式注入、完整 Provider 設定保存／清除，以及舊專案 highlight 遷移。
+單元測試涵蓋：90%→92% 的 percentage points／relative %、零基準、資料集不同比較阻擋、硬體差異降級、Pass 1 五個 C、Pass 2 精簡回應相容、Pass 3 與表格部分回應相容、所有分析階段缺少區段、嚴格單一 JSON object、三次格式重做上限、網路／權限錯誤不誤重試、重做 token 累計、固定 Schema 契約、Evidence 頁碼範圍、摘錄正規化核對、CSV 公式注入、完整 Provider 設定保存／清除，以及舊專案 highlight 遷移。
 
 ## 人工驗收文件組
 
@@ -30,5 +30,6 @@
 8. 以 C 驗證低文字品質警示與人工核對狀態；以 D 驗證拒絕原因。
 9. 匯出 Markdown、CSV、JSON、BibTeX、RIS；搜尋輸出確認不含 Key 或 PDF bytes。
 10. 在 PDF 上拖曳螢光標記並點一下新增標記點，重整後確認 PDF 原檔及標記都自動恢復；切換刪除模式確認可移除且不產生便條。
+11. 以測試模型故意回傳非 JSON、Markdown code fence 或 schema 不符內容；確認遮罩依序顯示第 2/3、3/3 次重做，成功後保留累計 usage，三次皆失敗時保留原有分析。
 
 真實 API 的 CORS、模型權限與額度取決於使用者帳號，必須使用該帳號的測試 Key 完成最終連線驗收；repository 與自動測試不保存真實 Key。

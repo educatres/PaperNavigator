@@ -537,11 +537,13 @@ export function validatePass1(value: unknown, pageCount: number, paperId: string
 }
 
 export function parseJsonResponse(raw: string): unknown {
-  const cleaned = raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
-  const first = cleaned.indexOf('{')
-  const last = cleaned.lastIndexOf('}')
-  if (first < 0 || last <= first) throw new Error('API 回應不是可辨識的 JSON。')
-  return JSON.parse(cleaned.slice(first, last + 1))
+  try {
+    const parsed = JSON.parse(raw.trim()) as unknown
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON 頂層不是 object。')
+    return parsed
+  } catch {
+    throw new Error('API 回應不是可辨識的單一 JSON object。')
+  }
 }
 
 export function schemaValidationMessage(error: unknown, stage: string) {

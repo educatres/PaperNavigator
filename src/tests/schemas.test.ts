@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizePass1Response, normalizePass2Response, normalizePass3Response, normalizeTableResponse, pass1Schema, pass2Schema, pass3Schema, schemaValidationMessage, tableAnalysisSchema, validatePass1 } from '../domain/schemas'
+import { normalizePass1Response, normalizePass2Response, normalizePass3Response, normalizeTableResponse, parseJsonResponse, pass1Schema, pass2Schema, pass3Schema, schemaValidationMessage, tableAnalysisSchema, validatePass1 } from '../domain/schemas'
 
 function validPass1() {
   return {
@@ -131,5 +131,19 @@ describe('Best-effort structured response compatibility', () => {
     const result = tableAnalysisSchema.safeParse({})
     expect(result.success).toBe(false)
     if (!result.success) expect(schemaValidationMessage(result.error, '表格分析')).not.toContain('個欄位')
+  })
+})
+
+describe('Strict JSON response parsing', () => {
+  it('accepts exactly one JSON object', () => {
+    expect(parseJsonResponse('  {"ok":true}  ')).toEqual({ ok: true })
+  })
+
+  it.each([
+    '```json\n{"ok":true}\n```',
+    '以下是結果：{"ok":true}',
+    '[{"ok":true}]',
+  ])('rejects a response that violates the fixed output contract', (raw) => {
+    expect(() => parseJsonResponse(raw)).toThrow('API 回應不是可辨識的單一 JSON object。')
   })
 })
