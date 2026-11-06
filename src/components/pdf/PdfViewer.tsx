@@ -179,12 +179,13 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWid
   useEffect(() => {
     if (!canvasRef.current) return
     let active = true
+    const controller = new AbortController()
     setRenderError('')
     setSelection(null)
     const width = Math.max(320, viewportWidth - 28)
-    renderPdfPage(pdf, pageIndex + 1, canvasRef.current, width, textLayerRef.current ?? undefined, zoom === 'fit' ? undefined : zoom)
+    renderPdfPage(pdf, pageIndex + 1, canvasRef.current, width, textLayerRef.current ?? undefined, zoom === 'fit' ? undefined : zoom, controller.signal)
       .catch((error) => { if (active) setRenderError(error instanceof Error ? error.message : String(error)) })
-    return () => { active = false }
+    return () => { active = false; controller.abort() }
   }, [pdf, pageIndex, viewportWidth, zoom])
 
   const point = (event: React.PointerEvent<HTMLDivElement>) => {

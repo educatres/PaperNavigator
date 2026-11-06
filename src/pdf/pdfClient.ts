@@ -53,27 +53,50 @@ export async function openPdf(bytes: Uint8Array) {
   return pdfjs.getDocument({ data: bytes.slice() }).promise
 }
 
-export async function renderPdfPage(pdf: PDFDocumentProxy, pageNumber: number, canvas: HTMLCanvasElement, maxWidth: number, textLayer?: HTMLElement, fixedScale?: number) {
-  const page = await pdf.getPage(pageNumber)
-  const unscaled = page.getViewport({ scale: 1 })
-  const scale = fixedScale ?? Math.min(2, Math.max(0.5, maxWidth / unscaled.width))
-  const viewport = page.getViewport({ scale })
-  const ratio = window.devicePixelRatio || 1
-  canvas.width = Math.floor(viewport.width * ratio)
-  canvas.height = Math.floor(viewport.height * ratio)
-  canvas.style.width = `${Math.floor(viewport.width)}px`
-  canvas.style.height = `${Math.floor(viewport.height)}px`
-  const context = canvas.getContext('2d')
-  if (!context) throw new Error('瀏覽器無法建立 PDF 畫布。')
-  await page.render({ canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0], canvas }).promise
-  if (textLayer) {
+const canvasRenderQueues = new WeakMap<HTMLCanvasElement, Promise<void>>()
+
+export async function renderPdfPage(pdf: PDFDocumentProxy, pageNumber: number, canvas: HTMLCanvasElement, maxWidth: number, textLayer?: HTMLElement, fixedScale?: number, signal?: AbortSignal) {
+  const previous = canvasRenderQueues.get(canvas) ?? Promise.resolve()
+  const render = previous.catch(() => undefined).then(async () => {
+    if (signal?.aborted) return
+    const page = await pdf.getPage(pageNumber)
+    if (signal?.aborted) return
+    const unscaled = page.getViewport({ scale: 1 })
+    const scale = fixedScale ?? Math.min(2, Math.max(0.5, maxWidth / unscaled.width))
+    const viewport = page.getViewport({ scale })
+    const ratio = window.devicePixelRatio || 1
+    canvas.width = Math.floor(viewport.width * ratio)
+    canvas.height = Math.floor(viewport.height * ratio)
+    canvas.style.width = `${Math.floor(viewport.width)}px`
+    canvas.style.height = `${Math.floor(viewport.height)}px`
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('瀏覽器無法建立 PDF 畫布。')
+    const renderTask = page.render({ canvasContext: context, viewport, transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0], canvas })
+    const cancel = () => renderTask.cancel()
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      await renderTask.promise
+    } catch (error) {
+      if (signal?.aborted) return
+      throw error
+    } finally {
+      signal?.removeEventListener('abort', cancel)
+    }
+    if (signal?.aborted || !textLayer) return
     textLayer.replaceChildren()
     textLayer.style.setProperty('--total-scale-factor', String(scale))
     textLayer.style.width = `${Math.floor(viewport.width)}px`
     textLayer.style.height = `${Math.floor(viewport.height)}px`
     const content = await page.getTextContent()
+    if (signal?.aborted) return
     const layer = new TextLayer({ textContentSource: content, container: textLayer, viewport })
     await layer.render()
+  })
+  canvasRenderQueues.set(canvas, render)
+  try {
+    await render
+  } finally {
+    if (canvasRenderQueues.get(canvas) === render) canvasRenderQueues.delete(canvas)
   }
 }
 
