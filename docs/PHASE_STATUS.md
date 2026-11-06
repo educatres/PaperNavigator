@@ -5,7 +5,7 @@
 - GitHub Pages 相對路徑與 Actions workflow：完成。
 - PDF.js 本機解析、預覽、文字與 SHA-256：完成。
 - Google PDF structured output、CGU text structured output：完成。
-- 指定模型清單、文字生成連線測試、完整 Provider 設定保存／清除、600 秒逾時、固定 JSON Schema、最多三次格式重做、錯誤／網路重試／取消／usage：完成。
+- 指定模型清單、文字生成連線測試、完整 Provider 設定保存／清除、600 秒逾時、固定 JSON Schema、本機 JSON 容錯、最多三次格式重做、錯誤／網路重試／取消／usage：完成。
 - 最終 live API 驗收：需由使用者以自己的 Key 按「測試連線」執行，repository 不含憑證。
 
 ## Phase 1｜可用 MVP

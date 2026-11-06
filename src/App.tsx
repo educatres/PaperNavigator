@@ -195,7 +195,7 @@ export default function App() {
   }
 
   const handleFormatRetry: FormatRetryHandler = ({ stage, retry, maxRetries }) => {
-    const text = `${stage}回傳格式不符，正在要求模型重做（${retry}/${maxRetries}）…`
+    const text = `${stage}回傳格式不符，正在修正模型輸出（${retry}/${maxRetries}）…`
     setBusy(text)
     setMessage(text)
   }

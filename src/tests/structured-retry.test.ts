@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { structuredOutputContract } from '../ai/providers/provider'
 import { generateWithFormatRetries, STRUCTURED_FORMAT_ATTEMPTS, STRUCTURED_FORMAT_RETRIES } from '../ai/orchestrator/structuredRetry'
+import { parseJsonResponse } from '../domain/schemas'
 
 const usage = { inputTokens: 1, outputTokens: 2, totalTokens: 3 }
 
 describe('Structured response format retries', () => {
-  it('forces a complete redo and succeeds on the third attempt', async () => {
-    const responses = ['not json', '```json\n{"ok":true}\n```', 'still invalid', '{"ok":true}']
+  it('uses targeted guidance across all three corrective retries', async () => {
+    const responses = ['not json', '{"ok":', '{"ok":"yes"}', '{"ok":true}']
     const prompts: string[] = []
     const notices: number[] = []
 
@@ -17,7 +18,11 @@ describe('Structured response format retries', () => {
         prompts.push(prompt)
         return { text: responses[prompts.length - 1], usage }
       },
-      parseAndValidate: (text) => JSON.parse(text) as { ok: boolean },
+      parseAndValidate: (text) => {
+        const parsed = parseJsonResponse(text) as { ok?: unknown }
+        if (parsed.ok !== true) throw new Error('Invalid input: expected true')
+        return parsed as { ok: true }
+      },
       onRetry: ({ retry }) => notices.push(retry),
     })
 
@@ -25,8 +30,11 @@ describe('Structured response format retries', () => {
     expect(response.attempts).toBe(4)
     expect(prompts).toHaveLength(4)
     expect(prompts[1]).toContain('JSON 格式修正重做 1/3')
+    expect(prompts[1]).toContain('沒有可解析的 JSON object')
     expect(prompts[2]).toContain('JSON 格式修正重做 2/3')
+    expect(prompts[2]).toContain('可能因輸出過長而被截斷')
     expect(prompts[3]).toContain('JSON 格式修正重做 3/3')
+    expect(prompts[3]).toContain('欄位或型別不符合 schema')
     expect(notices).toEqual([1, 2, 3])
     expect(response.usage).toEqual({ inputTokens: 4, outputTokens: 8, totalTokens: 12 })
   })

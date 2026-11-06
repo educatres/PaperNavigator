@@ -536,14 +536,99 @@ export function validatePass1(value: unknown, pageCount: number, paperId: string
   return { ...parsed, evidence }
 }
 
-export function parseJsonResponse(raw: string): unknown {
-  try {
-    const parsed = JSON.parse(raw.trim()) as unknown
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('JSON 頂層不是 object。')
-    return parsed
-  } catch {
-    throw new Error('API 回應不是可辨識的單一 JSON object。')
+function tryJson(value: string): { parsed: true; value: unknown } | { parsed: false } {
+  try { return { parsed: true, value: JSON.parse(value) as unknown } }
+  catch { return { parsed: false } }
+}
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+function removeTrailingCommas(value: string) {
+  let result = ''
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index]
+    if (inString) {
+      result += character
+      if (escaped) escaped = false
+      else if (character === '\\') escaped = true
+      else if (character === '"') inString = false
+      continue
+    }
+    if (character === '"') { inString = true; result += character; continue }
+    if (character === ',') {
+      let next = index + 1
+      while (/\s/.test(value[next] ?? '')) next += 1
+      if (value[next] === '}' || value[next] === ']') continue
+    }
+    result += character
   }
+  return result
+}
+
+function balancedJsonObjects(value: string) {
+  const objects: string[] = []
+  let start = -1
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index]
+    if (start < 0) {
+      if (character === '{') { start = index; depth = 1 }
+      continue
+    }
+    if (inString) {
+      if (escaped) escaped = false
+      else if (character === '\\') escaped = true
+      else if (character === '"') inString = false
+      continue
+    }
+    if (character === '"') inString = true
+    else if (character === '{') depth += 1
+    else if (character === '}') {
+      depth -= 1
+      if (depth === 0) {
+        objects.push(value.slice(start, index + 1))
+        start = -1
+      }
+    }
+  }
+  return objects
+}
+
+function parseObjectCandidate(candidate: string) {
+  for (const value of [candidate, removeTrailingCommas(candidate)]) {
+    const result = tryJson(value)
+    if (result.parsed && isJsonObject(result.value)) return result.value
+  }
+  return null
+}
+
+export function parseJsonResponse(raw: string): unknown {
+  const cleaned = raw.trim().replace(/^\uFEFF/, '')
+  const direct = tryJson(cleaned)
+  if (direct.parsed) {
+    if (isJsonObject(direct.value)) return direct.value
+    throw new Error('API 回應的 JSON 頂層必須是 object。')
+  }
+
+  const fenced = cleaned.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)?.[1]
+  if (fenced) {
+    const parsed = parseObjectCandidate(fenced)
+    if (parsed) return parsed
+  }
+
+  for (const candidate of balancedJsonObjects(cleaned)) {
+    const parsed = parseObjectCandidate(candidate)
+    if (parsed) return parsed
+  }
+
+  if (cleaned.includes('{')) throw new Error('API 回應的 JSON 可能被截斷或括號未閉合。')
+  throw new Error('API 回應中找不到可辨識的 JSON object。')
 }
 
 export function schemaValidationMessage(error: unknown, stage: string) {

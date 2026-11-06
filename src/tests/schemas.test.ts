@@ -134,16 +134,25 @@ describe('Best-effort structured response compatibility', () => {
   })
 })
 
-describe('Strict JSON response parsing', () => {
+describe('Recoverable JSON response parsing', () => {
   it('accepts exactly one JSON object', () => {
     expect(parseJsonResponse('  {"ok":true}  ')).toEqual({ ok: true })
   })
 
   it.each([
-    '```json\n{"ok":true}\n```',
-    '以下是結果：{"ok":true}',
-    '[{"ok":true}]',
-  ])('rejects a response that violates the fixed output contract', (raw) => {
-    expect(() => parseJsonResponse(raw)).toThrow('API 回應不是可辨識的單一 JSON object。')
+    ['```json\n{"ok":true}\n```', { ok: true }],
+    ['以下是結果：{"ok":true}。', { ok: true }],
+    ['```json\n{"ok":true,}\n```', { ok: true }],
+    ['說明 {"text":"保留字串內的 } 符號","nested":{"value":1}} 完成', { text: '保留字串內的 } 符號', nested: { value: 1 } }],
+  ])('repairs a common model wrapper before requesting another API call', (raw, expected) => {
+    expect(parseJsonResponse(raw)).toEqual(expected)
+  })
+
+  it('still rejects a top-level array', () => {
+    expect(() => parseJsonResponse('[{"ok":true}]')).toThrow('JSON 頂層必須是 object')
+  })
+
+  it('identifies a likely truncated object for targeted retry guidance', () => {
+    expect(() => parseJsonResponse('{"ok":')).toThrow('可能被截斷或括號未閉合')
   })
 })
