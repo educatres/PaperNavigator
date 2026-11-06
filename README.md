@@ -6,6 +6,7 @@ PaperNavigator 是以「來源可追溯」為核心的 AI 論文快速閱讀導�
 
 - PDF magic bytes、密碼／損毀處理、SHA-256 重複檢查、PDF.js 預覽與逐頁文字擷取。
 - 第一遍五個 C、第二遍方法／圖表／觀測值、第三遍重建／假設／研究題目。
+- 各分析階段接受精簡或部分 AI 回應；缺少區段保留空白／明確缺值，不會讓可用結果整份作廢。
 - 指定 Table/Figure 的 SOTA 定位、trade-offs、limitations／ablation 三步分析。
 - 每筆重要事實保留 evidence、PDF 實體頁、短摘錄與 matched／unverified／mismatch 狀態。
 - 2–10 篇比較、可比性標籤、percentage points 與 relative % 分開計算。

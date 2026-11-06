@@ -5,11 +5,11 @@
 | 檢查 | 指令 | 目前狀態 |
 | --- | --- | --- |
 | TypeScript strict | `npm.cmd run typecheck` | 通過 |
-| Unit tests | `npm.cmd test` | 20/20 通過 |
+| Unit tests | `npm.cmd test` | 24/24 通過 |
 | Production build | `npm.cmd run build` | 通過 |
 | Dependency audit | `npm.cmd audit --omit=dev` | 0 vulnerabilities |
 
-單元測試涵蓋：90%→92% 的 percentage points／relative %、零基準、資料集不同比較阻擋、硬體差異降級、Pass 1 五個 C、Pass 2 精簡回應相容、Evidence 頁碼範圍、摘錄正規化核對、CSV 公式注入、完整 Provider 設定保存／清除，以及舊專案 highlight 遷移。
+單元測試涵蓋：90%→92% 的 percentage points／relative %、零基準、資料集不同比較阻擋、硬體差異降級、Pass 1 五個 C、Pass 2 精簡回應相容、Pass 3 與表格部分回應相容、所有分析階段缺少區段、Evidence 頁碼範圍、摘錄正規化核對、CSV 公式注入、完整 Provider 設定保存／清除，以及舊專案 highlight 遷移。
 
 ## 人工驗收文件組
 
@@ -24,7 +24,7 @@
 2. 輸入測試 Key，按「讀取模型清單」確認只出現 API 實際回傳的 Gemma／OSS 120B；執行「測試連線」確認顯示回覆，再驗證儲存、重整保留與紅色清除功能。
 3. 執行 Pass 1；確認全畫面半透明遮罩顯示目前步驟、等待時間與取消按鈕，再檢查五個 C 都有 evidence 或「未找到」，點 evidence 跳 PDF。
 4. 執行 Pass 2；確認 prior work 與 paper proposed 分開，缺值不是 0，且精簡回應的缺少欄位會補明確預設而非整份作廢。
-5. 指定一個表格；確認只稱本文所報告的比較結果，消融最大下降不被稱為因果證明。
+5. 指定一個表格；確認只稱本文所報告的比較結果，消融最大下降不被稱為因果證明；AI 省略任一欄位時仍保留其餘可用結果，不顯示「等 N 個欄位」。
 6. 執行 Pass 3；確認 missing／implicit 可見，研究題目標示為 AI 建議。
 7. 加入 B；不同 split 不得出現全體第一名。同條件資料顯示 absolute、relative 與 percentage points。
 8. 以 C 驗證低文字品質警示與人工核對狀態；以 D 驗證拒絕原因。

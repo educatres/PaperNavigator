@@ -261,7 +261,8 @@ export function normalizePass1Response(value: unknown): unknown {
 }
 
 function rows(value: unknown) {
-  return Array.isArray(value) ? value : []
+  if (Array.isArray(value)) return value
+  return value === undefined || value === null ? [] : [value]
 }
 
 function statusValue(value: unknown) {
@@ -278,6 +279,41 @@ function numericValue(value: unknown) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
   const parsed = Number.parseFloat(text(value).replace(/,/g, ''))
   return Number.isFinite(parsed) ? parsed : null
+}
+
+function booleanValue(value: unknown) {
+  if (typeof value === 'boolean') return value
+  const raw = text(value).toLowerCase()
+  return raw === 'true' || raw === 'yes' || raw === '1' || raw === 'bold' || raw === 'emphasized'
+}
+
+function normalizeMetricObservation(value: unknown, index: number) {
+  const row = record(value)
+  const origin = text(first(row, ['methodOrigin', 'origin'])).toLowerCase()
+  const methodOrigin = origin.includes('baseline') ? 'reproduced_baseline'
+    : origin.includes('prior') || origin.includes('cited') ? 'cited_prior_work' : 'paper_proposed'
+  return {
+    id: text(first(row, ['id', 'observationId']), `observation-${index + 1}`),
+    paperId: text(row.paperId),
+    methodName: text(first(row, ['methodName', 'method', 'model']), '未命名方法'),
+    methodOrigin,
+    task: text(first(row, ['task', 'problem']), '未報告任務'),
+    dataset: nullableText(first(row, ['dataset', 'datasetName'])),
+    datasetVersion: nullableText(first(row, ['datasetVersion', 'version'])),
+    split: nullableText(first(row, ['split', 'partition'])),
+    metricName: text(first(row, ['metricName', 'metric']), '未命名指標'),
+    metricDefinition: nullableText(first(row, ['metricDefinition', 'definition'])),
+    direction: directionValue(first(row, ['direction', 'betterWhen'])),
+    rawValue: text(first(row, ['rawValue', 'value', 'result']), '未報告'),
+    numericValue: numericValue(first(row, ['numericValue', 'valueNumber'])),
+    unit: nullableText(first(row, ['unit', 'units'])),
+    dispersion: nullableText(first(row, ['dispersion', 'variance', 'std'])),
+    pretrainedData: nullableText(first(row, ['pretrainedData', 'pretrainingData'])),
+    hardware: nullableText(first(row, ['hardware', 'compute'])),
+    protocol: nullableText(first(row, ['protocol', 'evaluationProtocol'])),
+    status: statusValue(first(row, ['status', 'informationStatus'])),
+    evidenceIds: evidenceIds(first(row, ['evidenceIds', 'evidence', 'sources'])),
+  }
 }
 
 /**
@@ -341,34 +377,7 @@ export function normalizePass2Response(value: unknown): unknown {
     }
   })
 
-  const observations = list(['observations', 'results', 'metricObservations']).map((item, index) => {
-    const row = record(item)
-    const origin = text(first(row, ['methodOrigin', 'origin'])).toLowerCase()
-    const methodOrigin = origin.includes('baseline') ? 'reproduced_baseline'
-      : origin.includes('prior') || origin.includes('cited') ? 'cited_prior_work' : 'paper_proposed'
-    return {
-      id: text(first(row, ['id', 'observationId']), `observation-${index + 1}`),
-      paperId: text(row.paperId),
-      methodName: text(first(row, ['methodName', 'method', 'model']), '未命名方法'),
-      methodOrigin,
-      task: text(first(row, ['task', 'problem']), '未報告任務'),
-      dataset: nullableText(first(row, ['dataset', 'datasetName'])),
-      datasetVersion: nullableText(first(row, ['datasetVersion', 'version'])),
-      split: nullableText(first(row, ['split', 'partition'])),
-      metricName: text(first(row, ['metricName', 'metric']), '未命名指標'),
-      metricDefinition: nullableText(first(row, ['metricDefinition', 'definition'])),
-      direction: directionValue(first(row, ['direction', 'betterWhen'])),
-      rawValue: text(first(row, ['rawValue', 'value', 'result']), '未報告'),
-      numericValue: numericValue(first(row, ['numericValue', 'valueNumber'])),
-      unit: nullableText(first(row, ['unit', 'units'])),
-      dispersion: nullableText(first(row, ['dispersion', 'variance', 'std'])),
-      pretrainedData: nullableText(first(row, ['pretrainedData', 'pretrainingData'])),
-      hardware: nullableText(first(row, ['hardware', 'compute'])),
-      protocol: nullableText(first(row, ['protocol', 'evaluationProtocol'])),
-      status: statusValue(first(row, ['status', 'informationStatus'])),
-      evidenceIds: evidenceIds(first(row, ['evidenceIds', 'evidence', 'sources'])),
-    }
-  })
+  const observations = list(['observations', 'results', 'metricObservations']).map(normalizeMetricObservation)
 
   const references = list(['references', 'citations', 'bibliography']).map((item, index) => {
     const row = record(item)
@@ -406,6 +415,110 @@ export function normalizePass2Response(value: unknown): unknown {
   }
 }
 
+/**
+ * Keep the third reading usable when a provider returns only some sections or
+ * uses compact field names. Missing sections stay empty instead of failing the
+ * entire analysis and blocking later work.
+ */
+export function normalizePass3Response(value: unknown): unknown {
+  const outer = record(value)
+  const wrapped = first(outer, ['result', 'pass3', 'analysis', 'data'])
+  const source = Object.keys(record(wrapped)).length ? record(wrapped) : outer
+  const list = (keys: string[]) => rows(first(source, keys))
+
+  const reconstruction = list(['reconstruction', 'methodReconstruction', 'steps']).map((item, index) => {
+    const row = record(item)
+    const rawStatus = text(first(row, ['status', 'certainty'])).toLowerCase()
+    const status = rawStatus === 'explicit' || rawStatus === 'implicit' || rawStatus === 'missing' ? rawStatus : 'missing'
+    return {
+      step: text(first(row, ['step', 'name', 'title']), text(item, `步驟 ${index + 1}`)),
+      detail: text(first(row, ['detail', 'description', 'assessment']), text(item, '未報告')),
+      status,
+      evidenceIds: evidenceIds(first(row, ['evidenceIds', 'evidence', 'sources'])),
+    }
+  })
+
+  const criticalItems = (keys: string[]) => list(keys).map((item) => {
+    const row = record(item)
+    const rawStatus = text(first(row, ['status', 'certainty'])).toLowerCase()
+    const status = rawStatus === 'confirmed' || rawStatus === 'needs_verification' || rawStatus === 'indeterminate'
+      ? rawStatus : 'indeterminate'
+    return {
+      title: text(first(row, ['title', 'name', 'issue']), text(item, '未報告')),
+      assessment: text(first(row, ['assessment', 'description', 'detail']), text(item, '未報告')),
+      status,
+      evidenceIds: evidenceIds(first(row, ['evidenceIds', 'evidence', 'sources'])),
+    }
+  })
+
+  const researchIdeas = list(['researchIdeas', 'ideas', 'futureWork']).slice(0, 5).map((item) => {
+    const row = record(item)
+    return {
+      question: text(first(row, ['question', 'researchQuestion', 'title']), text(item, '未報告')),
+      motivation: text(first(row, ['motivation', 'rationale']), '未報告'),
+      hypothesis: text(first(row, ['hypothesis', 'expectedResult']), '未報告'),
+      minimumExperiment: text(first(row, ['minimumExperiment', 'experiment', 'method']), '未報告'),
+      requiredData: text(first(row, ['requiredData', 'data', 'dataset']), '未報告'),
+      metric: text(first(row, ['metric', 'evaluationMetric']), '未報告'),
+    }
+  })
+
+  return {
+    schemaVersion: '1.0',
+    promptVersion: 'pass3.v1',
+    reconstruction,
+    assumptions: criticalItems(['assumptions', 'keyAssumptions']),
+    threats: criticalItems(['threats', 'validityThreats', 'risks']),
+    reproducibilityRisks: criticalItems(['reproducibilityRisks', 'reproducibility', 'replicationRisks']),
+    researchIdeas,
+  }
+}
+
+/**
+ * Table extraction is intentionally best-effort. Providers often omit empty
+ * arrays, return primitive cells, or provide only observations. Normalize all
+ * of those shapes so one missing field never discards the useful remainder.
+ */
+export function normalizeTableResponse(value: unknown): unknown {
+  const outer = record(value)
+  const wrapped = first(outer, ['result', 'tableAnalysis', 'table', 'analysis'])
+  const source = Object.keys(record(wrapped)).length ? record(wrapped) : outer
+  const columns = stringList(first(source, ['columns', 'headers', 'columnNames']))
+  const rawRows = rows(first(source, ['rows', 'dataRows', 'values', 'data']))
+  const normalizedRows = rawRows.map((item) => {
+    const row = record(item)
+    const explicitCells = first(row, ['cells', 'values', 'row'])
+    const keyedCells = columns.map((column) => Object.entries(row)
+      .find(([key]) => key.toLowerCase() === column.toLowerCase())?.[1])
+    const cells = Array.isArray(item) ? item
+      : Array.isArray(explicitCells) ? explicitCells
+        : Object.keys(row).length ? (keyedCells.some((cell) => cell !== undefined) ? keyedCells : Object.values(row))
+          : [item]
+    return cells.map((cell) => {
+      const cellObject = record(cell)
+      return {
+        raw: text(first(cellObject, ['raw', 'value', 'text', 'content']), text(cell)),
+        emphasized: booleanValue(first(cellObject, ['emphasized', 'bold', 'highlighted', 'isBest'])),
+      }
+    })
+  }).filter((row) => row.some((cell) => cell.raw))
+  const parsedPage = integerValue(first(source, ['pdfPageIndex', 'pageIndex', 'page']))
+
+  return {
+    label: text(first(source, ['label', 'id', 'tableLabel']), 'Table'),
+    title: text(first(source, ['title', 'caption', 'name']), '未提供標題'),
+    pdfPageIndex: parsedPage !== null && parsedPage >= 0 ? parsedPage : 0,
+    columns,
+    rows: normalizedRows,
+    footnotes: stringList(first(source, ['footnotes', 'notes'])),
+    observations: rows(first(source, ['observations', 'results', 'metricObservations'])).map(normalizeMetricObservation),
+    positioning: stringList(first(source, ['positioning', 'comparisonPositioning', 'findings'])),
+    tradeoffs: stringList(first(source, ['tradeoffs', 'tradeOffs', 'advantagesDisadvantages'])),
+    limitations: stringList(first(source, ['limitations', 'limits', 'caveats'])),
+    evidence: normalizeEvidence(first(source, ['evidence', 'sources', 'sourceRefs'])),
+  }
+}
+
 export function validatePass1(value: unknown, pageCount: number, paperId: string): Pass1Result {
   const parsed = pass1Schema.parse(normalizePass1Response(value))
   const evidence = parsed.evidence.map((item) => {
@@ -433,9 +546,7 @@ export function parseJsonResponse(raw: string): unknown {
 
 export function schemaValidationMessage(error: unknown, stage: string) {
   if (!(error instanceof z.ZodError)) return null
-  const fields = [...new Set(error.issues.map((issue) => issue.path.length ? issue.path.join('.') : 'root'))].slice(0, 6)
-  const suffix = error.issues.length > fields.length ? `等 ${error.issues.length} 個欄位` : fields.join('、')
-  return `${stage}的 AI 回傳格式不完整（${suffix}）。系統未覆蓋原有分析；請重試，或改用較擅長結構化輸出的模型。`
+  return `${stage}的 AI 回傳內容無法轉換成可用資料。系統已保留原有分析；請重試，或改用其他模型。`
 }
 
 const informationStatusSchema = z.enum(['reported', 'inferred', 'not_reported', 'unknown'])
@@ -499,7 +610,7 @@ export const pass3Schema = z.object({
   assumptions: z.array(z.object({ title: z.string(), assessment: z.string(), status: z.enum(['confirmed', 'needs_verification', 'indeterminate']), evidenceIds: evidenceIdsSchema })),
   threats: z.array(z.object({ title: z.string(), assessment: z.string(), status: z.enum(['confirmed', 'needs_verification', 'indeterminate']), evidenceIds: evidenceIdsSchema })),
   reproducibilityRisks: z.array(z.object({ title: z.string(), assessment: z.string(), status: z.enum(['confirmed', 'needs_verification', 'indeterminate']), evidenceIds: evidenceIdsSchema })),
-  researchIdeas: z.array(z.object({ question: z.string(), motivation: z.string(), hypothesis: z.string(), minimumExperiment: z.string(), requiredData: z.string(), metric: z.string() })).min(3).max(5),
+  researchIdeas: z.array(z.object({ question: z.string(), motivation: z.string(), hypothesis: z.string(), minimumExperiment: z.string(), requiredData: z.string(), metric: z.string() })).max(5),
 })
 
 export const tableAnalysisSchema = z.object({
@@ -560,7 +671,7 @@ export const PASS3_JSON_SCHEMA = {
     schemaVersion: { type: 'string', enum: ['1.0'] }, promptVersion: { type: 'string', enum: ['pass3.v1'] },
     reconstruction: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { step: { type: 'string' }, detail: { type: 'string' }, status: { type: 'string', enum: ['explicit', 'implicit', 'missing'] }, evidenceIds: evidenceIdsJson }, required: ['step', 'detail', 'status', 'evidenceIds'] } },
     assumptions: { type: 'array', items: criticalJson }, threats: { type: 'array', items: criticalJson }, reproducibilityRisks: { type: 'array', items: criticalJson },
-    researchIdeas: { type: 'array', minItems: 3, maxItems: 5, items: { type: 'object', additionalProperties: false, properties: { question: { type: 'string' }, motivation: { type: 'string' }, hypothesis: { type: 'string' }, minimumExperiment: { type: 'string' }, requiredData: { type: 'string' }, metric: { type: 'string' } }, required: ['question', 'motivation', 'hypothesis', 'minimumExperiment', 'requiredData', 'metric'] } },
+    researchIdeas: { type: 'array', maxItems: 5, items: { type: 'object', additionalProperties: false, properties: { question: { type: 'string' }, motivation: { type: 'string' }, hypothesis: { type: 'string' }, minimumExperiment: { type: 'string' }, requiredData: { type: 'string' }, metric: { type: 'string' } }, required: ['question', 'motivation', 'hypothesis', 'minimumExperiment', 'requiredData', 'metric'] } },
   },
   required: ['schemaVersion', 'promptVersion', 'reconstruction', 'assumptions', 'threats', 'reproducibilityRisks', 'researchIdeas'],
 } as const

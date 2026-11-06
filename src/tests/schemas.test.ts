@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizePass1Response, normalizePass2Response, pass1Schema, pass2Schema, validatePass1 } from '../domain/schemas'
+import { normalizePass1Response, normalizePass2Response, normalizePass3Response, normalizeTableResponse, pass1Schema, pass2Schema, pass3Schema, schemaValidationMessage, tableAnalysisSchema, validatePass1 } from '../domain/schemas'
 
 function validPass1() {
   return {
@@ -82,5 +82,54 @@ describe('Pass 2 compatibility', () => {
     expect(parsed.observations[0]).toMatchObject({ methodName: 'Method A', metricName: 'Accuracy', rawValue: '92%' })
     expect(parsed.datasets).toEqual([])
     expect(parsed.evidence).toEqual([])
+  })
+})
+
+describe('Best-effort structured response compatibility', () => {
+  it('accepts a partial third reading and leaves omitted sections empty', () => {
+    const parsed = pass3Schema.parse(normalizePass3Response({ analysis: {
+      assumptions: ['資料切分方式需要確認'],
+      ideas: [{ question: '能否在外部資料集重現？' }],
+    } }))
+
+    expect(parsed.reconstruction).toEqual([])
+    expect(parsed.assumptions[0]).toMatchObject({
+      title: '資料切分方式需要確認', status: 'indeterminate', evidenceIds: [],
+    })
+    expect(parsed.researchIdeas[0]).toMatchObject({
+      question: '能否在外部資料集重現？', motivation: '未報告', metric: '未報告',
+    })
+    expect(parsed.threats).toEqual([])
+  })
+
+  it('accepts a partial table response and normalizes primitive cells', () => {
+    const parsed = tableAnalysisSchema.parse(normalizeTableResponse({ result: {
+      caption: '主要結果',
+      headers: ['方法', '準確率'],
+      rows: [['Method A', { value: '92%', bold: true }]],
+      results: [{ method: 'Method A', metric: 'Accuracy', value: '92%' }],
+    } }))
+
+    expect(parsed).toMatchObject({
+      title: '主要結果', columns: ['方法', '準確率'], footnotes: [], positioning: [], tradeoffs: [], limitations: [], evidence: [],
+    })
+    expect(parsed.rows[0]).toEqual([
+      { raw: 'Method A', emphasized: false },
+      { raw: '92%', emphasized: true },
+    ])
+    expect(parsed.observations[0]).toMatchObject({ methodName: 'Method A', metricName: 'Accuracy', rawValue: '92%' })
+  })
+
+  it('allows every analysis stage to omit non-returned sections', () => {
+    expect(() => validatePass1({}, 1, 'paper-1')).not.toThrow()
+    expect(() => pass2Schema.parse(normalizePass2Response({}))).not.toThrow()
+    expect(() => pass3Schema.parse(normalizePass3Response({}))).not.toThrow()
+    expect(() => tableAnalysisSchema.parse(normalizeTableResponse({}))).not.toThrow()
+  })
+
+  it('does not expose a missing-field count if conversion is impossible', () => {
+    const result = tableAnalysisSchema.safeParse({})
+    expect(result.success).toBe(false)
+    if (!result.success) expect(schemaValidationMessage(result.error, '表格分析')).not.toContain('個欄位')
   })
 })
