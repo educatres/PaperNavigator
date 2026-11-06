@@ -349,7 +349,13 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .annotation-copy p { line-height: 1.55; }
 .annotation-source { font-weight: 600; }
 .annotation-generated { margin-top: 7px !important; padding: 7px 8px; background: #fff; color: #526166; }
-.annotation-generated strong { color: #347d75; }
+.annotation-generated > strong { display: block; margin-bottom: 5px; color: #347d75; }
+.markdown-output > div { font-size: 10px; line-height: 1.65; }
+.markdown-output h1, .markdown-output h2, .markdown-output h3, .markdown-output h4 { margin: 0 0 5px; color: #34464d; font-family: inherit; font-size: 11px; }
+.markdown-output p { margin: 0 0 5px; }
+.markdown-output ul, .markdown-output ol { margin: 0 0 5px; padding-left: 18px; }
+.markdown-output li { margin: 2px 0; }
+.markdown-output code { padding: 1px 3px; background: #edf0ed; font-family: 'DM Mono', monospace; font-size: 9px; }
 .annotation-actions { grid-column: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
 .annotation-color-picker { display: flex; gap: 3px; }
 .annotation-color-picker button { width: 17px; height: 17px; padding: 0; border: 1px solid rgba(51,62,65,.25); border-radius: 50%; cursor: pointer; }

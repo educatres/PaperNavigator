@@ -67,6 +67,30 @@ function busyDetail(message: string, elapsed: number) {
   return '仍在處理中；完成後會自動驗證結果。若不想繼續等待，可以取消這次請求。'
 }
 
+function markdownToHtml(value: string) {
+  const escaped = value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const inline = (line: string) => line
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/__([^_]+)__/g, '<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+  const blocks = escaped.split(/\n\s*\n/).map((block) => block.trim()).filter(Boolean)
+  return blocks.map((block) => {
+    const lines = block.split('\n')
+    if (lines.every((line) => /^\s*[-*]\s+/.test(line))) return `<ul>${lines.map((line) => `<li>${inline(line.replace(/^\s*[-*]\s+/, ''))}</li>`).join('')}</ul>`
+    if (lines.every((line) => /^\s*\d+\.\s+/.test(line))) return `<ol>${lines.map((line) => `<li>${inline(line.replace(/^\s*\d+\.\s+/, ''))}</li>`).join('')}</ol>`
+    if (lines.length === 1) {
+      const heading = lines[0].match(/^\s*(#{1,4})\s+(.+)$/)
+      if (heading) return `<h${heading[1].length}>${inline(heading[2])}</h${heading[1].length}>`
+    }
+    return `<p>${lines.map(inline).join('<br />')}</p>`
+  }).join('')
+}
+
+function MarkdownOutput({ label, value }: { label: string; value: string }) {
+  return <div className="annotation-generated markdown-output"><strong>{label}</strong><div dangerouslySetInnerHTML={{ __html: markdownToHtml(value) }} /></div>
+}
+
 function BusyOverlay({ message, onCancel }: { message: string; onCancel?: () => void }) {
   const [elapsed, setElapsed] = useState(0)
 
@@ -368,8 +392,8 @@ export default function App() {
     const label = action === 'summary' ? '正在產生螢光標記 AI 摘要' : '正在翻譯螢光標記'
     void startJob(label, async (signal) => {
       const prompt = action === 'summary'
-        ? `請用繁體中文摘要下列論文原文，保留關鍵條件、數值與限制，最多 3 句。不要加入原文沒有的推論。\n${wrapUntrusted('highlight-text', highlight.text!)}`
-        : `請將下列論文原文翻譯成自然、準確的繁體中文。只輸出翻譯，不要加前言或解釋。\n${wrapUntrusted('highlight-text', highlight.text!)}`
+        ? `請用繁體中文摘要下列論文原文，保留關鍵條件、數值與限制，最多 3 句。請以 Markdown 輸出，使用簡短小標題或條列提高閱讀性；不要重述或貼回原文，也不要加入原文沒有的推論。\n${wrapUntrusted('highlight-text', highlight.text!)}`
+        : `請將下列論文原文翻譯成自然、準確的繁體中文。請以 Markdown 輸出，可用段落或條列提高閱讀性；只輸出翻譯，不要重述或貼回原文，不要加前言或解釋。\n${wrapUntrusted('highlight-text', highlight.text!)}`
       const response = await generateText(config, prompt, signal)
       setLastUsage(response.usage)
       const value = response.text.trim()
@@ -637,28 +661,26 @@ function NotesView({ paper, text, setText, verification, setVerification, onAdd,
       <div className="notes-list">{paper.notes.map((note) => <article key={note.id}><span className={`note-state ${note.verification}`}>{note.verification === 'checked' ? '已查原文' : note.verification === 'concern' ? '有疑慮' : '待查證'}</span><p>{note.body}</p><button className="danger-link" onClick={() => onDelete(note.id)}>刪除</button></article>)}</div>
     </section>
     <section className="content-card">
-      <div className="card-heading"><div><span className="eyebrow">SOURCE ANNOTATIONS</span><h2>螢光筆、AI 摘要與文字定位</h2></div></div>
-      <div className="annotation-summary"><strong>{paper.highlights.length} 個螢光標記</strong><strong>{summaries.length} 個 AI 圈選摘要</strong><strong>{paper.evidence.length} 個來源定位</strong></div>
+      <div className="card-heading"><div><span className="eyebrow">SOURCE ANNOTATIONS</span><h2>螢光筆與 AI 摘要</h2></div></div>
+      <div className="annotation-summary"><strong>{paper.highlights.length} 個螢光標記</strong><strong>{summaries.length} 個 AI 圈選摘要</strong></div>
       <div className="annotation-list">
         <h3>螢光筆</h3>
         {paper.highlights.length ? paper.highlights.map((highlight, index) => <article className="highlight-record" key={highlight.id}>
           <span className={`annotation-color ${highlight.color}`} />
           <div className="annotation-copy"><p className="annotation-source">{highlight.text || `文字標記 ${index + 1}`}</p>
           <div className="annotation-actions">
-            <button className="small-button" onClick={() => onJump(highlight.pdfPageIndex)}>PDF p.{highlight.pdfPageIndex + 1}</button>
+            <button className="small-button" onClick={() => onJump(highlight.pdfPageIndex)}>文字定位 · PDF p.{highlight.pdfPageIndex + 1}</button>
             <div className="annotation-color-picker" aria-label="更換螢光筆顏色">{colors.map((item) => <button key={item.id} className={highlight.color === item.id ? 'active' : ''} title={`${item.label}色`} aria-label={`改成${item.label}色`} style={{ background: item.id === 'yellow' ? '#f6d349' : item.id === 'green' ? '#57be89' : item.id === 'pink' ? '#ea7da0' : '#99ccee' }} onClick={() => onChangeHighlightColor(highlight.id, item.id)} />)}</div>
             <button className="small-button" disabled={!highlight.text?.trim()} onClick={() => onHighlightAction(highlight.id, 'summary')}>AI摘要</button>
             <button className="small-button" disabled={!highlight.text?.trim()} onClick={() => onHighlightAction(highlight.id, 'translation')}>翻譯</button>
             <button className="danger-link" onClick={() => onDeleteHighlight(highlight.id)}>刪除</button>
           </div>
-            {highlight.aiSummary && <p className="annotation-generated"><strong>AI 摘要：</strong>{highlight.aiSummary}</p>}
-            {highlight.translation && <p className="annotation-generated"><strong>翻譯：</strong>{highlight.translation}</p>}
+            {highlight.aiSummary && <MarkdownOutput label="AI 摘要" value={highlight.aiSummary} />}
+            {highlight.translation && <MarkdownOutput label="翻譯" value={highlight.translation} />}
           </div>
         </article>) : <p>尚未建立螢光標記。</p>}
         <h3>AI 圈選摘要</h3>
         {summaries.length ? summaries.map((summary) => <article key={summary.id}><p>{summary.summary}</p><button className="small-button" onClick={() => onJump(summary.pdfPageIndex)}>PDF p.{summary.pdfPageIndex + 1}</button><button className="danger-link" onClick={() => onDeleteAiSummary(summary.id)}>刪除</button></article>) : <p>尚未建立 AI 圈選摘要。</p>}
-        <h3>文字定位</h3>
-        {paper.evidence.length ? paper.evidence.map((item) => <article key={item.id}><p>{item.quote || item.objectLabel || '未提供摘錄'}</p>{item.pdfPageIndex === null ? <span className="missing-chip">頁碼待確認</span> : <button className="small-button" onClick={() => onJump(item.pdfPageIndex!)}>PDF p.{item.pdfPageIndex + 1}</button>}</article>) : <p>尚未建立來源定位。</p>}
       </div>
     </section>
     <section className="content-card"><h2>匯出與資料管理</h2><div className="export-grid"><button onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>單篇三遍分析、證據、標記與 AI 摘要</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>會一併刪除瀏覽器內保存的 PDF 原檔</span></button></div><p className="fine-print">所有匯出均排除 API Key 與 PDF 原檔。CSV 匯出會防止試算表公式注入。</p></section>

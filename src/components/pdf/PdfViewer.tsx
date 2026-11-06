@@ -252,7 +252,9 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWid
       }))
     if (!rects.length) return
     const first = rects[0]
-    onAddHighlight({ id: crypto.randomUUID(), paperId, pdfPageIndex: pageIndex, ...first, rects, color, text: current.toString().trim() || undefined, createdAt: new Date().toISOString() })
+    // One text selection is one saved annotation. Keep only the first visual
+    // block so a wrapped selection cannot create duplicate records.
+    onAddHighlight({ id: crypto.randomUUID(), paperId, pdfPageIndex: pageIndex, ...first, color, text: current.toString().trim() || undefined, createdAt: new Date().toISOString() })
     current.removeAllRanges()
   }
 

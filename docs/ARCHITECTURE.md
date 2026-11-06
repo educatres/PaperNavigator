@@ -30,7 +30,7 @@ UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，�
 2. Pass 1 只產生鳥瞰與五個 C。
 3. 使用者明確選擇後才執行 Pass 2；產生方法、圖表索引、evidence、observations 與 references。
 4. Pass 3 只在 Pass 2 後執行；輸出重建狀態、假設、威脅與可驗證研究題目。
-5. PDF 檢視器連續渲染所有頁面，捲動時更新目前頁碼；螢光標記以單筆文字記錄保存多段版面矩形。
+5. PDF 檢視器連續渲染所有頁面，捲動時更新目前頁碼；同次文字選取只保存一筆螢光記錄與第一個版面區塊。
 6. 比較工作台只使用已保存的 observations；篩選不觸發 AI。
 
 ## Provider 差異

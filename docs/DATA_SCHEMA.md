@@ -7,7 +7,7 @@ Schema version：`1.0`。
 ## 來源與分析分離
 
 - `Paper`：檔案 hash、書目 metadata、各閱讀階段、observations、evidence、舊版 table analyses、citations、notes、PDF highlights 與 AI 圈選摘要。
-- `PdfHighlight`：paper／頁碼、0–1 正規化矩形座標（可含同次選取的多段 `rects`）、顏色、可選取文字、AI 摘要、翻譯與建立時間；不建立便條。
+- `PdfHighlight`：paper／頁碼、0–1 正規化矩形座標、顏色、可選取文字、AI 摘要、翻譯與建立時間；同次選取只保存第一個版面區塊，舊資料仍可讀取 `rects`。
 - `SourceEvidence`：`paperId`、0-based `pdfPageIndex`、1-based `pdfPageDisplay`、印刷頁、section、object type／label、短摘錄、核對狀態與備註。
 - `MetricObservation`：方法來源、task、dataset／version、split、metric definition／direction、raw value、numeric value、unit、pretraining、hardware、protocol 與 evidence IDs。
 - `Pass1Result`：metadata、研究問題、五個 C、貢獻、閱讀決策與 evidence。
