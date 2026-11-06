@@ -7,8 +7,7 @@ import type { ComparisonRow } from './domain/comparison'
 import { analyzePass1, analyzePass2, analyzePass3 } from './ai/orchestrator/analysis'
 import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
-import { roiPrompt } from './ai/prompts/prompts'
-import { wrapUntrusted } from './ai/security'
+import { highlightSummaryPrompt, highlightTranslationPrompt, roiPrompt } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
 import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
 import { exportBibTeX, exportComparisonCsv, exportPaperMarkdown, exportPass3Text, exportProjectJson, exportRis, importProjectJson } from './storage/exports'
@@ -391,11 +390,10 @@ export default function App() {
   const runHighlightTextAction = (highlightId: string, action: 'summary' | 'translation') => {
     const highlight = selectedPaper?.highlights.find((item) => item.id === highlightId)
     if (!highlight?.text?.trim()) { setError('這個螢光標記沒有可處理的文字。'); return }
+    const sourceText = highlight.text.trim()
     const label = action === 'summary' ? '正在產生螢光標記 AI 摘要' : '正在翻譯螢光標記'
     void startJob(label, async (signal) => {
-      const prompt = action === 'summary'
-        ? `只針對下方這一筆螢光筆選取的完整文字做摘要，不得使用或推測任何未包含在這段文字中的內容。保留關鍵條件、數值與限制，最多 3 句。請以 Markdown 輸出，使用簡短小標題或條列提高閱讀性；不要重述或貼回原文，也不要加入原文沒有的推論。\n${wrapUntrusted('highlight-text', highlight.text!)}`
-        : `只翻譯下方這一筆螢光筆選取的完整文字，包含該次選取跨越的所有行與句子；不得翻譯或補充螢光區域以外的內容。請翻譯成自然、準確的繁體中文，保留原文條件、數值、專有名詞與段落關係。請以 Markdown 輸出，可用段落或條列提高閱讀性；只輸出翻譯，不要重述或貼回原文，不要加前言或解釋。\n${wrapUntrusted('highlight-text', highlight.text!)}`
+      const prompt = action === 'summary' ? highlightSummaryPrompt(sourceText) : highlightTranslationPrompt(sourceText)
       const response = await generateText(config, prompt, signal)
       setLastUsage(response.usage)
       const value = response.text.trim()
@@ -670,7 +668,7 @@ function NotesView({ paper, text, setText, verification, setVerification, onAdd,
         <h3>螢光筆</h3>
         {paper.highlights.length ? paper.highlights.map((highlight, index) => <article className="highlight-record" key={highlight.id}>
           <span className={`annotation-color ${highlight.color}`} />
-          <div className="annotation-copy"><p className="annotation-source">{highlight.text || `文字標記 ${index + 1}`}</p>
+          <div className="annotation-copy"><p className="annotation-source">{highlight.text?.trim() || `文字標記 ${index + 1}`}</p>
           <div className="annotation-actions">
             <button className="small-button" onClick={() => onJump(highlight.pdfPageIndex)}>文字定位 · PDF p.{highlight.pdfPageIndex + 1}</button>
             <div className="annotation-color-picker" aria-label="更換螢光筆顏色">{colors.map((item) => <button key={item.id} className={highlight.color === item.id ? 'active' : ''} title={`${item.label}色`} aria-label={`改成${item.label}色`} style={{ background: item.id === 'yellow' ? '#f6d349' : item.id === 'green' ? '#57be89' : item.id === 'pink' ? '#ea7da0' : '#99ccee' }} onClick={() => onChangeHighlightColor(highlight.id, item.id)} />)}</div>

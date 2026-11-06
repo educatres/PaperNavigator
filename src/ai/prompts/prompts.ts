@@ -31,6 +31,16 @@ export function pass3Prompt(pass1: Pass1Result, pass2: Pass2Result, userPlan: st
 使用者重建想法：${wrapUntrusted('user-reimplementation-plan', userPlan || '未提供')}`
 }
 
+export function highlightSummaryPrompt(text: string) {
+  return `只針對「螢光筆與 AI 摘要」區塊中顯示的這一筆螢光文字做摘要。輸入只有下方螢光筆選取文字，不得使用 PDF 其他頁面、其他螢光標記、筆記或外部內容，也不得補充未出現在輸入中的資訊。保留關鍵條件、數值與限制，最多 3 句。請以 Markdown 輸出，使用簡短小標題或條列提高閱讀性；不要重述或貼回原文，也不要加入原文沒有的推論。
+${wrapUntrusted('highlight-text', text)}`
+}
+
+export function highlightTranslationPrompt(text: string) {
+  return `只翻譯「螢光筆與 AI 摘要」區塊中顯示的這一筆螢光文字。輸入只有下方螢光筆選取文字，包含該次選取跨越的所有行與句子；不得翻譯或補充螢光區域以外的內容，也不得使用 PDF 其他頁面、其他螢光標記、筆記或外部內容。請翻譯成自然、準確的繁體中文，保留原文條件、數值、專有名詞與段落關係。請以 Markdown 輸出，可用段落或條列提高閱讀性；只輸出翻譯，不要重述或貼回原文，不要加前言或解釋。
+${wrapUntrusted('highlight-text', text)}`
+}
+
 export function tablePrompt(label: string, pageIndex: number, pageText: string) {
   return `只分析指定的 ${label || '表格'}（PDF page index ${pageIndex}）。輸出必須是單一 JSON object，禁止再包 result、data、tableAnalysis 或其他外層 key；不要輸出 Markdown 或說明文字。所有表格欄位都要存在：columns 是字串陣列，rows 是由 {"raw":字串,"emphasized":布林} 組成的二維陣列；沒有資料用空陣列，未知值用 null 或 schema 指定的明確缺值狀態。請先抽取 columns、rows 原始字串、可靠時的 emphasized 線索、footnotes 與 observations，再做三步分析：
 Step A：僅指出「本文所報告的比較結果」與表內定位，不得稱全球 SOTA；區分本文方法、重現 baseline、引用前人數值。
