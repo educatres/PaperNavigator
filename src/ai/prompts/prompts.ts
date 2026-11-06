@@ -67,6 +67,35 @@ function stripEchoedHighlightText(value: string, sourceText: string) {
   return value.replace(echoed, '').trim()
 }
 
+function highlightJsonContent(value: unknown): string | null {
+  if (typeof value === 'string') return value.trim()
+  if (Array.isArray(value)) {
+    const items = value.map(highlightJsonContent).filter((item): item is string => Boolean(item))
+    return items.length ? items.join('\n') : null
+  }
+  if (!value || typeof value !== 'object') return null
+
+  const record = value as Record<string, unknown>
+  for (const key of ['summary', 'translation', 'content', 'text', 'answer', 'result', 'output']) {
+    if (!(key in record)) continue
+    const content = highlightJsonContent(record[key])
+    if (content) return content
+  }
+  const values = Object.values(record)
+  return values.length === 1 ? highlightJsonContent(values[0]) : null
+}
+
+function stripHighlightJsonEnvelope(value: string) {
+  const fenced = value.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i)
+  const candidate = (fenced?.[1] ?? value).trim()
+  if (!candidate || !/^[{["].*[}\]"]$/s.test(candidate)) return value.trim()
+  try {
+    return highlightJsonContent(JSON.parse(candidate)) ?? value.trim()
+  } catch {
+    return value.trim()
+  }
+}
+
 export function cleanHighlightResponse(value: string, prompt: string, sourceText = '') {
   let cleaned = value.trim()
   const exactPrompt = prompt.trim()
@@ -83,6 +112,8 @@ export function cleanHighlightResponse(value: string, prompt: string, sourceText
     const markerIndex = cleaned.lastIndexOf(marker)
     cleaned = markerIndex >= 0 ? cleaned.slice(markerIndex + marker.length).trim() : ''
   }
+  cleaned = stripHighlightResponseLead(cleaned)
+  cleaned = stripHighlightJsonEnvelope(cleaned)
   cleaned = stripHighlightResponseLead(cleaned)
   return stripEchoedHighlightText(cleaned, sourceText)
 }

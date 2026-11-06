@@ -48,4 +48,21 @@ describe('highlight AI prompts', () => {
     expect(cleanHighlightResponse(response, prompt, selected)).toBe('準確率為 92%。\n使用了保留測試集。')
     expect(cleanHighlightResponse(response, '', selected)).toBe('準確率為 92%。\n使用了保留測試集。')
   })
+
+  it('displays only the content of a JSON-wrapped summary', () => {
+    const response = JSON.stringify({ summary: '本文概述了空間轉錄體技術與高通量視覺化平台。' }, null, 2)
+
+    expect(cleanHighlightResponse(response, '', selected)).toBe('本文概述了空間轉錄體技術與高通量視覺化平台。')
+  })
+
+  it('unwraps fenced and nested JSON translation output', () => {
+    const response = '```json\n{"result":{"translation":"準確率為 92%。"}}\n```'
+
+    expect(cleanHighlightResponse(response, '', selected)).toBe('準確率為 92%。')
+  })
+
+  it('keeps ordinary Markdown and malformed JSON unchanged', () => {
+    expect(cleanHighlightResponse('### 摘要\n保留 {重要條件}。', '', selected)).toBe('### 摘要\n保留 {重要條件}。')
+    expect(cleanHighlightResponse('{ summary: 未加引號 }', '', selected)).toBe('{ summary: 未加引號 }')
+  })
 })
