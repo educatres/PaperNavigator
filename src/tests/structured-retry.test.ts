@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { structuredOutputContract } from '../ai/providers/provider'
-import { generateWithFormatRetries, STRUCTURED_FORMAT_ATTEMPTS } from '../ai/orchestrator/structuredRetry'
+import { generateWithFormatRetries, STRUCTURED_FORMAT_ATTEMPTS, STRUCTURED_FORMAT_RETRIES } from '../ai/orchestrator/structuredRetry'
 
 const usage = { inputTokens: 1, outputTokens: 2, totalTokens: 3 }
 
 describe('Structured response format retries', () => {
   it('forces a complete redo and succeeds on the third attempt', async () => {
-    const responses = ['not json', '```json\n{"ok":true}\n```', '{"ok":true}']
+    const responses = ['not json', '```json\n{"ok":true}\n```', 'still invalid', '{"ok":true}']
     const prompts: string[] = []
     const notices: number[] = []
 
@@ -18,16 +18,17 @@ describe('Structured response format retries', () => {
         return { text: responses[prompts.length - 1], usage }
       },
       parseAndValidate: (text) => JSON.parse(text) as { ok: boolean },
-      onRetry: ({ attempt }) => notices.push(attempt),
+      onRetry: ({ retry }) => notices.push(retry),
     })
 
     expect(response.result).toEqual({ ok: true })
-    expect(response.attempts).toBe(3)
-    expect(prompts).toHaveLength(3)
-    expect(prompts[1]).toContain('JSON 格式修正重做 2/3')
-    expect(prompts[2]).toContain('JSON 格式修正重做 3/3')
-    expect(notices).toEqual([2, 3])
-    expect(response.usage).toEqual({ inputTokens: 3, outputTokens: 6, totalTokens: 9 })
+    expect(response.attempts).toBe(4)
+    expect(prompts).toHaveLength(4)
+    expect(prompts[1]).toContain('JSON 格式修正重做 1/3')
+    expect(prompts[2]).toContain('JSON 格式修正重做 2/3')
+    expect(prompts[3]).toContain('JSON 格式修正重做 3/3')
+    expect(notices).toEqual([1, 2, 3])
+    expect(response.usage).toEqual({ inputTokens: 4, outputTokens: 8, totalTokens: 12 })
   })
 
   it('stops after three invalid responses and preserves a concise final error', async () => {
@@ -38,9 +39,10 @@ describe('Structured response format retries', () => {
       prompt: 'Analyze.',
       generate,
       parseAndValidate: (text) => JSON.parse(text),
-    })).rejects.toThrow('連續 3 次不是可辨識且符合格式的 JSON')
+    })).rejects.toThrow('初次 API 回應與 3 次重做都不是可辨識且符合格式的 JSON')
 
     expect(generate).toHaveBeenCalledTimes(STRUCTURED_FORMAT_ATTEMPTS)
+    expect(STRUCTURED_FORMAT_RETRIES).toBe(3)
   })
 
   it('retries JSON that parses but fails the required schema', async () => {

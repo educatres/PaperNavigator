@@ -1,11 +1,12 @@
 import type { AnalysisUsage } from '../../domain/types'
 
-export const STRUCTURED_FORMAT_ATTEMPTS = 3
+export const STRUCTURED_FORMAT_RETRIES = 3
+export const STRUCTURED_FORMAT_ATTEMPTS = STRUCTURED_FORMAT_RETRIES + 1
 
 export interface StructuredRetryNotice {
   stage: string
-  attempt: number
-  maxAttempts: number
+  retry: number
+  maxRetries: number
 }
 
 interface RawStructuredGeneration {
@@ -27,7 +28,7 @@ function addUsage(current: AnalysisUsage, next: AnalysisUsage): AnalysisUsage {
 
 function retryPrompt(prompt: string, attempt: number) {
   if (attempt === 1) return prompt
-  return `${prompt}\n\n【JSON 格式修正重做 ${attempt}/${STRUCTURED_FORMAT_ATTEMPTS}】\n上一個回應不是可解析且符合指定 schema 的單一 JSON 物件。請重新完成整份分析；不要解釋錯誤，不要使用 Markdown 程式碼區塊，也不要在 JSON 前後加入任何文字。`
+  return `${prompt}\n\n【JSON 格式修正重做 ${attempt - 1}/${STRUCTURED_FORMAT_RETRIES}】\n上一個回應不是可解析且符合指定 schema 的單一 JSON 物件。請重新完成整份分析；不要解釋錯誤，不要使用 Markdown 程式碼區塊，也不要在 JSON 前後加入任何文字。`
 }
 
 function isEmptyModelResponse(error: unknown) {
@@ -56,7 +57,7 @@ export async function generateWithFormatRetries<T>(options: {
       if (!isEmptyModelResponse(error)) throw error
       lastError = error
       if (attempt < STRUCTURED_FORMAT_ATTEMPTS) {
-        options.onRetry?.({ stage: options.stage, attempt: attempt + 1, maxAttempts: STRUCTURED_FORMAT_ATTEMPTS })
+        options.onRetry?.({ stage: options.stage, retry: attempt, maxRetries: STRUCTURED_FORMAT_RETRIES })
         continue
       }
       break
@@ -69,11 +70,11 @@ export async function generateWithFormatRetries<T>(options: {
     } catch (error) {
       lastError = error
       if (attempt < STRUCTURED_FORMAT_ATTEMPTS) {
-        options.onRetry?.({ stage: options.stage, attempt: attempt + 1, maxAttempts: STRUCTURED_FORMAT_ATTEMPTS })
+        options.onRetry?.({ stage: options.stage, retry: attempt, maxRetries: STRUCTURED_FORMAT_RETRIES })
       }
     }
   }
 
   const detail = (lastError instanceof Error ? lastError.message : String(lastError ?? '')).replace(/\s+/g, ' ').slice(0, 160)
-  throw new Error(`${options.stage}的 API 回應連續 ${STRUCTURED_FORMAT_ATTEMPTS} 次不是可辨識且符合格式的 JSON。系統已保留原有分析；請重試或改用其他模型。${detail ? `（最後錯誤：${detail}）` : ''}`)
+  throw new Error(`${options.stage}的初次 API 回應與 ${STRUCTURED_FORMAT_RETRIES} 次重做都不是可辨識且符合格式的 JSON。系統已保留原有分析；請重試或改用其他模型。${detail ? `（最後錯誤：${detail}）` : ''}`)
 }

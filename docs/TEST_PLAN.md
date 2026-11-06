@@ -30,6 +30,6 @@
 8. 以 C 驗證低文字品質警示與人工核對狀態；以 D 驗證拒絕原因。
 9. 匯出 Markdown、CSV、JSON、BibTeX、RIS；搜尋輸出確認不含 Key 或 PDF bytes。
 10. 在 PDF 上拖曳螢光標記並點一下新增標記點，重整後確認 PDF 原檔及標記都自動恢復；切換刪除模式確認可移除且不產生便條。
-11. 以測試模型故意回傳非 JSON、Markdown code fence 或 schema 不符內容；確認遮罩依序顯示第 2/3、3/3 次重做，成功後保留累計 usage，三次皆失敗時保留原有分析。
+11. 以測試模型故意回傳非 JSON、Markdown code fence 或 schema 不符內容；確認初次失敗後遮罩依序顯示第 1/3、2/3、3/3 次重做，成功後保留累計 usage，三次重做皆失敗時保留原有分析。
 
 真實 API 的 CORS、模型權限與額度取決於使用者帳號，必須使用該帳號的測試 Key 完成最終連線驗收；repository 與自動測試不保存真實 Key。

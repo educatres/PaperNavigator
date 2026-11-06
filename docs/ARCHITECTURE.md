@@ -12,7 +12,7 @@ Analysis Orchestrator
   ├─ Prompt version
   ├─ AIProvider adapter
   ├─ strict JSON + Zod schema validation
-  ├─ format retry（最多三次，重新產生整份回應）
+  ├─ format retry（初次失敗後最多重做三次）
   └─ Evidence verification
           ↓
 Google generateContent       CGU Responses / Chat Completions

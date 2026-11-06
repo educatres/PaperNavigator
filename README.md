@@ -40,7 +40,7 @@ npm.cmd run build
 | Google AI Studio | `https://generativelanguage.googleapis.com/v1beta` | PDF 以 `inlineData` 直接送往 Gemini | `models/:model:generateContent` + JSON Schema |
 | CGU LLM Gateway | `https://air.cgu.edu.tw/cgullmapi/v1` | PDF.js 先在本機擷取逐頁文字；只傳文字 | 指定模型使用 `/responses` |
 
-所有結構化分析都會附上完整 JSON Schema，且只接受單一 JSON object；Markdown code fence、前後說明、陣列或無法通過正規化驗證的內容都會要求模型整份重做，最多共三次。重做狀態會顯示在全螢幕遮罩，所有嘗試的 token 都會累計在 usage，並可能產生額外 API 費用。
+所有結構化分析都會附上完整 JSON Schema，且只接受單一 JSON object；Markdown code fence、前後說明、陣列或無法通過正規化驗證的內容都會要求模型整份重做。初次請求後最多重做三次（最多四次 API 呼叫）；重做狀態會顯示在全螢幕遮罩，所有嘗試的 token 都會累計在 usage，並可能產生額外 API 費用。
 
 Google API Key 以 `x-goog-api-key` header 傳送；CGU 使用 `Authorization: Bearer`。Key 會依 Provider 儲存在目前瀏覽器的 localStorage，重新整理後會自動帶回，直到使用者在設定面板按「清除」。Key 不會寫入 IndexedDB、URL、repo、專案資料、匯出或日誌；共用電腦請用完後清除。
 
