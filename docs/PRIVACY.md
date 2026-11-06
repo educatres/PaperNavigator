@@ -5,9 +5,8 @@
 - Key 依 Provider 儲存在目前瀏覽器的 localStorage，重新整理後會自動帶回，直到使用者按「清除」。
 - 不寫入 IndexedDB、URL、GitHub Actions、analytics、console、專案資料、repository 或任何匯出。
 - Google 使用 `x-goog-api-key` header；CGU 使用 Bearer header。
-- Project Proxy URL 與 Token 依使用者要求同樣保存在 localStorage，紅色「清除設定」會一併移除。
 - localStorage 不會加密，也可能被同來源 JavaScript 讀取；共用或公共電腦使用後必須清除。
-- 純前端 JavaScript 無法像後端秘密一樣保護使用者 Key；正式機構部署應使用後端代理與短效憑證。
+- 純前端 JavaScript 無法像伺服器秘密一樣保護使用者 Key；只適合充分知情的 BYOK 使用情境。
 
 ## PDF
 
@@ -19,11 +18,11 @@
 
 ## 輸出
 
-- JSON 備份不含 Key、PDF bytes、File 或代理 Token。
+- JSON 備份不含 Key、PDF bytes 或 File。
 - CSV 對 `=`, `+`, `-`, `@` 開頭的欄位加前置單引號，避免公式注入。
 - 模型輸出以 React 純文字節點呈現，不注入 HTML。
 - CSP 禁止 object、限制 script 為本站資源，並允許必要 HTTPS API 連線。
 
 ## 本機資料
 
-分析、筆記、螢光標記與 PDF 原檔存在 IndexedDB。清除瀏覽器資料會刪除結果及原檔；JSON 備份不含 PDF，因此使用者仍應自行保存原始論文。跨裝置同步需另外部署 Project Proxy，並由部署者提供身分驗證、授權、加密、備份與資料保留政策。
+分析、筆記、螢光標記與 PDF 原檔存在 IndexedDB。清除瀏覽器資料會刪除結果及原檔；JSON 備份不含 PDF，因此使用者仍應自行保存原始論文。

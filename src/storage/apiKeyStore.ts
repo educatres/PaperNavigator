@@ -2,7 +2,7 @@ import type { ProviderConfig, ProviderId } from '../domain/types'
 
 export const API_KEY_STORAGE_KEY = 'papernavigator.api-keys.v1'
 export const AI_SETTINGS_STORAGE_KEY = 'papernavigator.ai-settings.v1'
-export const PROXY_SETTINGS_STORAGE_KEY = 'papernavigator.proxy-settings.v1'
+const DEPRECATED_SETTINGS_STORAGE_KEY = 'papernavigator.proxy-settings.v1'
 
 type ApiKeyMap = Partial<Record<ProviderId, string>>
 type StorageLike = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
@@ -122,29 +122,12 @@ export function clearProviderConfig(provider: ProviderId, storage?: StorageLike)
   }
 }
 
-export function readProxySettings(storage?: StorageLike) {
-  try {
-    const raw = (storage ?? window.localStorage).getItem(PROXY_SETTINGS_STORAGE_KEY)
-    const parsed = raw ? JSON.parse(raw) as unknown : null
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { url: '', token: '' }
-    const value = parsed as Record<string, unknown>
-    return { url: typeof value.url === 'string' ? value.url : '', token: typeof value.token === 'string' ? value.token : '' }
-  } catch {
-    return { url: '', token: '' }
-  }
-}
-
-export function saveProxySettings(url: string, token: string, storage?: StorageLike) {
-  try { (storage ?? window.localStorage).setItem(PROXY_SETTINGS_STORAGE_KEY, JSON.stringify({ url, token })) }
-  catch { /* The in-memory fields remain usable. */ }
-}
-
 export function clearAllSettings(storage?: StorageLike) {
   try {
     const target = storage ?? window.localStorage
     target.removeItem(API_KEY_STORAGE_KEY)
     target.removeItem(AI_SETTINGS_STORAGE_KEY)
-    target.removeItem(PROXY_SETTINGS_STORAGE_KEY)
+    target.removeItem(DEPRECATED_SETTINGS_STORAGE_KEY)
   } catch {
     // The caller also clears its in-memory state.
   }

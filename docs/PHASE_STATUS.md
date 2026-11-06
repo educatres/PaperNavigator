@@ -23,5 +23,3 @@
 ## Phase 4｜進階
 
 - ROI 圈選、citation list、Crossref、co-citation、BibTeX／RIS、分享摘要：完成。
-- Project Proxy client 與可執行的最小 Node proxy：完成。
-- 生產環境多人身分系統、雲端基礎設施與機構資料政策：屬部署環境責任，程式已保留介面但不虛構已有外部帳號服務。

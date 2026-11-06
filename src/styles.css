@@ -28,7 +28,7 @@ p { line-height: 1.7; }
 
 .app-shell { min-height: 100vh; }
 .topbar { height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 22px; color: #f9f6ee; background: var(--ink); border-bottom: 1px solid rgba(255,255,255,.12); }
-.brand-block, .top-actions, .brand-block > div, .toolbar-actions, .paper-actions, .note-actions, .proxy-actions { display: flex; align-items: center; }
+.brand-block, .top-actions, .brand-block > div, .toolbar-actions, .paper-actions, .note-actions { display: flex; align-items: center; }
 .brand-block { gap: 11px; min-width: 0; }
 .brand-mark { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.38); color: #ffb19b; font: 600 13px/1 'DM Mono', monospace; transform: rotate(-3deg); }
 .brand-block > div:nth-child(2) { flex-direction: column; align-items: flex-start; line-height: 1.2; }
@@ -71,10 +71,6 @@ textarea { resize: vertical; min-height: 72px; }
 .settings-footer p { max-width: 900px; flex: 1; margin: 0; color: #607074; font-size: 12px; }
 .settings-actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
 .settings-actions button { min-height: 38px; padding: 8px 11px; font-size: 11px; white-space: nowrap; }
-.proxy-settings { margin-top: 12px; border-top: 1px solid #dedbd3; padding-top: 10px; }
-.proxy-settings summary { cursor: pointer; color: #4e6168; font-size: 12px; font-weight: 600; }
-.proxy-grid { grid-template-columns: 1.4fr 1fr auto; align-items: end; margin-bottom: 6px; }
-.proxy-actions { gap: 6px; padding-bottom: 1px; }
 .fine-print { color: #788386; font-size: 10px; line-height: 1.55; }
 
 .status-strip { min-height: 36px; display: flex; align-items: center; gap: 18px; padding: 7px 22px; background: #e2ded5; border-bottom: 1px solid #d1cdc4; color: #526166; font-size: 11px; }
@@ -356,7 +352,7 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
   .content-panel { min-height: 720px; }
   .content-scroll { padding: 16px 12px 45px; }
   .pdf-panel { min-height: 560px; }
-  .settings-grid, .proxy-grid, .two-column, .five-c-grid, .metric-grid, .citation-network, .export-grid, .filter-row { grid-template-columns: 1fr; }
+  .settings-grid, .two-column, .five-c-grid, .metric-grid, .citation-network, .export-grid, .filter-row { grid-template-columns: 1fr; }
   .settings-footer, .paper-title-row, .reattach-banner { align-items: stretch; flex-direction: column; }
   .settings-actions { justify-content: stretch; }
   .settings-actions button { flex: 1 1 45%; }

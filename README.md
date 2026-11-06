@@ -13,7 +13,6 @@ PaperNavigator 是以「來源可追溯」為核心的 AI 論文快速閱讀導�
 - 個人筆記、IndexedDB 保存、Markdown／CSV／JSON／BibTeX／RIS 匯出與 JSON 回復。
 - references 待驗證清單、Crossref DOI 核對、共引線索與 PDF 區域圈選分析。
 - PDF 原檔本機保存、重新整理自動恢復，以及不產生便條的多色螢光標記。
-- 可插拔 Project Proxy 及可直接執行的最小同步服務。
 
 ## 本機執行
 
@@ -53,6 +52,6 @@ Vite `base` 使用相對路徑，可部署在 repository 子路徑。Repository 
 
 ## 本機資料與備份
 
-分析、筆記、螢光標記、書目與 PDF 原檔存於 IndexedDB，重新整理後會自動恢復。完整專案 JSON 含 `schemaVersion` 與螢光標記，但為控制檔案大小仍不含 PDF 原檔、Key 或代理 Token。API 單次等待上限為 600 秒。
+分析、筆記、螢光標記、書目與 PDF 原檔存於 IndexedDB，重新整理後會自動恢復。完整專案 JSON 含 `schemaVersion` 與螢光標記，但為控制檔案大小仍不含 PDF 原檔或 Key。API 單次等待上限為 600 秒。
 
 進一步設計、測試與隱私說明位於 [docs](./docs)。

@@ -151,20 +151,3 @@ export async function clearPdfDocuments() {
     transaction.onerror = () => { db.close(); reject(transaction.error) }
   })
 }
-
-export async function pushToProjectProxy(baseUrl: string, token: string, bundle: ProjectBundle) {
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(bundle.project.id)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify(bundle),
-  })
-  if (!response.ok) throw new Error(`同步失敗（HTTP ${response.status}）。`)
-}
-
-export async function pullFromProjectProxy(baseUrl: string, token: string, projectId: string): Promise<ProjectBundle> {
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/projects/${encodeURIComponent(projectId)}`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-  if (!response.ok) throw new Error(`讀取同步專案失敗（HTTP ${response.status}）。`)
-  return response.json() as Promise<ProjectBundle>
-}

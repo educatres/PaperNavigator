@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { AI_SETTINGS_STORAGE_KEY, API_KEY_STORAGE_KEY, PROXY_SETTINGS_STORAGE_KEY, clearAllSettings, clearApiKey, clearProviderConfig, readActiveProvider, readApiKey, readProviderConfig, readProxySettings, saveApiKey, saveProviderConfig, saveProxySettings } from '../storage/apiKeyStore'
+import { AI_SETTINGS_STORAGE_KEY, API_KEY_STORAGE_KEY, clearAllSettings, clearApiKey, clearProviderConfig, readActiveProvider, readApiKey, readProviderConfig, saveApiKey, saveProviderConfig } from '../storage/apiKeyStore'
 
 class MemoryStorage {
   private values = new Map<string, string>()
@@ -60,15 +60,14 @@ describe('API Key localStorage', () => {
     expect(storage.getItem(AI_SETTINGS_STORAGE_KEY)).toContain('providers')
   })
 
-  it('紅色清除會移除 Provider、Key 與代理設定', () => {
+  it('紅色清除會移除 Provider、Key 與舊版設定殘留', () => {
     const storage = new MemoryStorage()
     saveProviderConfig({ id: 'cgu', apiKey: 'secret', baseUrl: 'https://example.test/v1', modelId: 'gpt-oss-120b' }, storage)
-    saveProxySettings('https://proxy.test', 'short-token', storage)
-    expect(readProxySettings(storage)).toEqual({ url: 'https://proxy.test', token: 'short-token' })
+    storage.setItem('papernavigator.proxy-settings.v1', JSON.stringify({ token: 'legacy-token' }))
 
     clearAllSettings(storage)
     expect(storage.getItem(API_KEY_STORAGE_KEY)).toBeNull()
     expect(storage.getItem(AI_SETTINGS_STORAGE_KEY)).toBeNull()
-    expect(storage.getItem(PROXY_SETTINGS_STORAGE_KEY)).toBeNull()
+    expect(storage.getItem('papernavigator.proxy-settings.v1')).toBeNull()
   })
 })

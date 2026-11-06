@@ -11,6 +11,6 @@
 | FR-07 Evidence 與 PDF 導航 | `verifyEvidence`, `EvidenceButtons`, `PdfViewer` |
 | FR-08 筆記與輸出 | `src/storage/exports.ts`, `NotesView` |
 | FR-09 Key／模型／成本 | `src/ai/providers/provider.ts`, settings panel |
-| Phase 4 引用／ROI／同步 | `src/research/citations.ts`, `PdfViewer`, `server/project-proxy.mjs` |
+| Phase 4 引用／ROI | `src/research/citations.ts`, `PdfViewer` |
 
 產品刻意不宣稱：已驗證全球最新 SOTA、已執行重訓、已閱讀未上傳全文、已完成真正可重現性驗證、固定免費額度或前端 Key 具伺服器等級保密性。

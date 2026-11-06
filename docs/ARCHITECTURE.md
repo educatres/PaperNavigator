@@ -6,7 +6,7 @@
 React UI
   ├─ PDF Viewer / ROI / persistent highlights
   ├─ Reading passes / Table analysis / Compare
-  └─ Notes / Citation / Export / Sync
+  └─ Notes / Citation / Export
           ↓
 Analysis Orchestrator
   ├─ Prompt version
@@ -19,7 +19,6 @@ Google generateContent       CGU Responses / Chat Completions
 PDF inlineData                  PDF.js extracted page text
 
 IndexedDB ← ProjectBundle + PDF Blob → JSON / Markdown / CSV / BibTeX / RIS
-                            → optional Project Proxy
 ```
 
 UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，`src/ai/providers` 處理傳輸、錯誤、重試與 usage。比較與差異計算位於純函式，AI 不負責做百分比心算。

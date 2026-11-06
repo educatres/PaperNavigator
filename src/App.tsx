@@ -8,9 +8,9 @@ import { analyzePass1, analyzePass2, analyzePass3, analyzeTable } from './ai/orc
 import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
 import { roiPrompt } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
-import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, pullFromProjectProxy, pushToProjectProxy, saveBundle, savePdfDocument } from './storage/projectStore'
+import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
 import { exportBibTeX, exportComparisonCsv, exportPaperMarkdown, exportProjectJson, exportRis, importProjectJson } from './storage/exports'
-import { clearAllSettings, readActiveProvider, readProviderConfig, readProxySettings, saveProviderConfig, saveProxySettings } from './storage/apiKeyStore'
+import { clearAllSettings, readActiveProvider, readProviderConfig, saveProviderConfig } from './storage/apiKeyStore'
 import { coCitationRows, verifyCitation } from './research/citations'
 
 type TabId = 'overview' | 'pass1' | 'pass2' | 'tables' | 'pass3' | 'compare' | 'research' | 'notes'
@@ -120,8 +120,6 @@ export default function App() {
   const [noteVerification, setNoteVerification] = useState<'checked' | 'pending' | 'concern'>('pending')
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [compareQuery, setCompareQuery] = useState({ task: '', dataset: '', metric: '' })
-  const [proxyUrl, setProxyUrl] = useState(() => readProxySettings().url)
-  const [proxyToken, setProxyToken] = useState(() => readProxySettings().token)
   const fileRef = useRef<HTMLInputElement | null>(null)
   const importRef = useRef<HTMLInputElement | null>(null)
   const reattachRef = useRef<HTMLInputElement | null>(null)
@@ -164,10 +162,6 @@ export default function App() {
     try { window.localStorage.setItem('papernavigator.settings-open', settingsOpen ? 'yes' : 'no') }
     catch { /* The panel still works when browser storage is unavailable. */ }
   }, [settingsOpen])
-
-  useEffect(() => {
-    saveProxySettings(proxyUrl, proxyToken)
-  }, [proxyUrl, proxyToken])
 
   useEffect(() => {
     if (!selectedId && bundle.papers[0]) setSelectedId(bundle.papers[0].id)
@@ -283,7 +277,7 @@ export default function App() {
       const reply = await testProviderConnection(config, controller.signal)
       saveProviderConfig(config)
       setConnectionState('ready')
-      setMessage(`連線成功，模型回覆：${reply.slice(0, 160)}`)
+      setMessage(`測試成功：已連線至 ${config.modelId}。模型回覆：${reply.slice(0, 160)}`)
     } catch (value) { setConnectionState('error'); reportError(value) }
     finally { setBusy(''); if (abortRef.current === controller) abortRef.current = null }
   }
@@ -298,8 +292,6 @@ export default function App() {
     const cleared = defaultProviderConfig('cgu')
     setConfig(cleared)
     setModels(modelOptions(cleared.modelId))
-    setProxyUrl('')
-    setProxyToken('')
     setShowKey(false)
     setConnectionState('idle')
     setMessage('已清除所有 AI 連線設定，並恢復 CGU／Gemma 預設值。')
@@ -469,11 +461,6 @@ export default function App() {
           <button className="danger-button" disabled={connectionState === 'testing'} onClick={clearSettings}>清除設定</button>
         </div>
       </div>
-      <details className="proxy-settings"><summary>進階：後端代理與跨裝置同步（Phase 4）</summary><div className="settings-grid proxy-grid">
-        <label>Project Proxy URL<input value={proxyUrl} onChange={(event) => setProxyUrl(event.target.value)} placeholder="https://example.edu/api" /></label>
-        <label>短效存取 Token<input type="password" value={proxyToken} onChange={(event) => setProxyToken(event.target.value)} placeholder="儲存在此瀏覽器" /></label>
-        <div className="proxy-actions"><button className="small-button" disabled={!proxyUrl} onClick={() => void pushToProjectProxy(proxyUrl, proxyToken, bundle).then(() => setMessage('專案已同步至代理服務。')).catch(reportError)}>推送專案</button><button className="small-button" disabled={!proxyUrl} onClick={() => void pullFromProjectProxy(proxyUrl, proxyToken, bundle.project.id).then(async (value) => { await clearPdfDocuments(); setBundle(value); setDocuments({}); setMessage('已從代理服務載入；同步資料不含 PDF 原檔，請重新附上。') }).catch(reportError)}>拉取專案</button></div>
-      </div><p className="fine-print">代理介面採 PUT/GET `/projects/:id`。正式部署需由機構後端提供驗證、授權與資料保留政策；GitHub Pages 本身不具多人帳號服務。</p></details>
     </section>}
 
     <div className="status-strip" role="status">
@@ -618,7 +605,7 @@ interface NotesViewProps {
 }
 
 function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onMarkdown, onJson, onClear }: NotesViewProps) {
-  return <div className="section-stack"><section className="content-card"><div className="card-heading"><div><span className="eyebrow">YOUR ANNOTATIONS</span><h2>個人筆記</h2></div></div><textarea className="note-input" value={text} onChange={(event) => setText(event.target.value)} placeholder="記錄疑問、驗證結果或自己的推論；不會覆蓋 AI 原始輸出。" /><div className="note-actions"><select value={verification} onChange={(event) => setVerification(event.target.value as 'checked' | 'pending' | 'concern')}><option value="pending">待查證</option><option value="checked">已查原文</option><option value="concern">有疑慮</option></select><button className="primary-button compact" disabled={!text.trim()} onClick={onAdd}>加入筆記</button></div><div className="notes-list">{paper.notes.map((note) => <article key={note.id}><span className={`note-state ${note.verification}`}>{note.verification === 'checked' ? '已查原文' : note.verification === 'concern' ? '有疑慮' : '待查證'}</span><p>{note.body}</p><button className="danger-link" onClick={() => onDelete(note.id)}>刪除</button></article>)}</div></section><section className="content-card"><h2>匯出與資料管理</h2><div className="export-grid"><button onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>單篇三遍分析、證據與筆記</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>會一併刪除瀏覽器內保存的 PDF 原檔</span></button></div><p className="fine-print">所有匯出均排除 API Key、PDF 原檔與短效代理 Token。CSV 匯出會防止試算表公式注入。</p></section></div>
+  return <div className="section-stack"><section className="content-card"><div className="card-heading"><div><span className="eyebrow">YOUR ANNOTATIONS</span><h2>個人筆記</h2></div></div><textarea className="note-input" value={text} onChange={(event) => setText(event.target.value)} placeholder="記錄疑問、驗證結果或自己的推論；不會覆蓋 AI 原始輸出。" /><div className="note-actions"><select value={verification} onChange={(event) => setVerification(event.target.value as 'checked' | 'pending' | 'concern')}><option value="pending">待查證</option><option value="checked">已查原文</option><option value="concern">有疑慮</option></select><button className="primary-button compact" disabled={!text.trim()} onClick={onAdd}>加入筆記</button></div><div className="notes-list">{paper.notes.map((note) => <article key={note.id}><span className={`note-state ${note.verification}`}>{note.verification === 'checked' ? '已查原文' : note.verification === 'concern' ? '有疑慮' : '待查證'}</span><p>{note.body}</p><button className="danger-link" onClick={() => onDelete(note.id)}>刪除</button></article>)}</div></section><section className="content-card"><h2>匯出與資料管理</h2><div className="export-grid"><button onClick={onMarkdown}><strong>Markdown 閱讀報告</strong><span>單篇三遍分析、證據與筆記</span></button><button onClick={onJson}><strong>完整專案 JSON</strong><span>含 schemaVersion，可回復匯入</span></button><button onClick={onClear} className="destructive"><strong>清除本機專案</strong><span>會一併刪除瀏覽器內保存的 PDF 原檔</span></button></div><p className="fine-print">所有匯出均排除 API Key 與 PDF 原檔。CSV 匯出會防止試算表公式注入。</p></section></div>
 }
 
 function EmptyAnalysis({ title, text, action, onRun, disabled }: { title: string; text: string; action?: string; onRun?: () => void; disabled?: boolean }) {
