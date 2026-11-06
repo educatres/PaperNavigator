@@ -44,8 +44,8 @@ function textSpanInfos(textLayer: HTMLElement) {
     .filter((item): item is TextSpanInfo => item.rect.width >= 1 && item.rect.height >= 1)
 }
 
-function findColumnBoundary(spans: TextSpanInfo[], stageWidth: number) {
-  if (spans.length < 6) return null
+function findColumnBoundary(spans: TextSpanInfo[], stageWidth: number, allowShortFallback = false) {
+  if (spans.length < 6 && !allowShortFallback) return null
   const sorted = [...spans].sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
   const lines: TextSpanInfo[][] = []
   for (const item of sorted) {
@@ -88,7 +88,22 @@ function findColumnBoundary(spans: TextSpanInfo[], stageWidth: number) {
     })
     .filter((cluster) => cluster.valid)
     .sort((a, b) => b.score - a.score)
-  return supported[0]?.midpoint ?? null
+  if (supported[0]) return supported[0].midpoint
+
+  // Short pages may not provide three repeated column gaps. Keep a conservative
+  // fallback so a clearly cross-column selection still becomes one-column text.
+  if (!allowShortFallback || spans.length < 4) return null
+  const ordered = [...spans].sort((a, b) => a.centerX - b.centerX)
+  let largestGap = 0
+  let splitIndex = -1
+  for (let index = 1; index < ordered.length; index += 1) {
+    const gap = ordered[index].centerX - ordered[index - 1].centerX
+    if (gap > largestGap) { largestGap = gap; splitIndex = index }
+  }
+  const fallbackThreshold = Math.max(56, stageWidth * .08)
+  return splitIndex > 0 && splitIndex < ordered.length && largestGap >= fallbackThreshold
+    ? (ordered[splitIndex - 1].centerX + ordered[splitIndex].centerX) / 2
+    : null
 }
 
 function selectionElement(node: Node | null) {
@@ -344,7 +359,7 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWid
         try { return range.intersectsNode(span.span) } catch { return false }
       })
 
-    const columnBoundary = findColumnBoundary(allSpans, stage.width)
+    const columnBoundary = findColumnBoundary(allSpans, stage.width) ?? findColumnBoundary(selectedSpans, stage.width, true)
     let activeColumnBoundary: number | null = null
     let keepLeftColumn = true
     if (columnBoundary !== null) {
