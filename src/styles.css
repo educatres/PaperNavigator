@@ -125,8 +125,8 @@ textarea { resize: vertical; min-height: 72px; }
 .library-footer > div { display: flex; justify-content: space-between; margin-top: 6px; }
 
 .content-panel { display: flex; flex-direction: column; background: var(--paper); border-right: 1px solid var(--line); }
-.tabbar { min-height: 49px; display: flex; overflow-x: auto; border-bottom: 1px solid var(--line); background: #f5f3ed; }
-.tabbar button { min-width: max-content; padding: 0 11px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #6c797b; cursor: pointer; font-size: 11px; }
+.tabbar { min-height: 56px; display: flex; overflow-x: auto; border-bottom: 1px solid var(--line); background: #f5f3ed; }
+.tabbar button { min-width: max-content; padding: 0 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #6c797b; cursor: pointer; font-size: 16.5px; line-height: 1.25; }
 .tabbar button small { margin-left: 4px; color: #a3a9a8; font: 8px 'DM Mono', monospace; }
 .tabbar button.active { color: var(--ink); border-bottom-color: var(--accent); background: #fff; font-weight: 600; }
 .content-scroll { flex: 1; overflow-y: auto; padding: 22px clamp(16px, 3vw, 34px) 60px; }
@@ -331,6 +331,8 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-toolbar strong { font-size: 11px; }
 .pdf-toolbar span { color: #98a9aa; font: 9px 'DM Mono', monospace; }
 .pdf-toolbar .icon-button, .pdf-toolbar .small-button { color: #d7dfde; border-color: #53656c; background: #31474f; }
+.pdf-toolbar .small-button[aria-pressed="true"] { color: #172b35; border-color: #ffd66b; background: #ffd66b; box-shadow: 0 0 0 2px rgba(255,214,107,.28), inset 0 -2px 0 rgba(111,76,11,.18); font-weight: 700; }
+.pdf-toolbar .small-button[aria-pressed="true"] .tool-icon { color: #172b35; }
 .pdf-toolbar .tool-icon { display: inline-block; margin-right: 3px; color: inherit; font: 13px/1 sans-serif; }
 .highlight-toolbar-palette { display: flex; align-items: center; gap: 3px; margin-left: -2px; }
 .highlight-toolbar-palette button { width: 18px; height: 18px; padding: 0; border: 2px solid rgba(215,223,222,.35); border-radius: 50%; cursor: pointer; }
