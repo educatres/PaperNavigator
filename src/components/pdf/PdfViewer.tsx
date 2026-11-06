@@ -144,9 +144,6 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
         </div>)}
       </div>}
     </div>
-    {tool === 'highlight' && <div className="pdf-annotation-actions">
-      <p>選取文字後會合併成一筆螢光標記；標記會隨專案自動保存。</p>
-    </div>}
     {tool === 'erase' && <div className="pdf-annotation-actions erase-hint"><p>點選頁面上的螢光標記即可刪除，不會影響分析或筆記。</p></div>}
     {tool === 'roi' && <div className="pdf-annotation-actions"><p>拖曳框選 Figure／Table，再請 AI 針對區域解讀；摘要會保存到「筆記與重點標記」。</p></div>}
   </aside>

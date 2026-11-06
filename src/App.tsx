@@ -17,14 +17,14 @@ import { coCitationRows, verifyCitation } from './research/citations'
 
 type TabId = 'overview' | 'pass1' | 'pass2' | 'pass3' | 'compare' | 'research' | 'notes'
 
-const TABS: Array<{ id: TabId; label: string; phase?: string }> = [
-  { id: 'overview', label: '總覽', phase: 'P0' },
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: 'overview', label: '總覽' },
   { id: 'pass1', label: '第一遍' },
   { id: 'pass2', label: '第二遍' },
   { id: 'notes', label: '筆記與重點標記' },
-  { id: 'pass3', label: '第三遍', phase: 'P3' },
+  { id: 'pass3', label: '第三遍' },
   { id: 'compare', label: '跨篇比較' },
-  { id: 'research', label: '研究延伸', phase: 'P4' },
+  { id: 'research', label: '研究延伸' },
 ]
 
 function emptyBundle(): ProjectBundle {
@@ -541,7 +541,7 @@ export default function App() {
       </aside>
 
       <section className="content-panel">
-        <nav className="tabbar" aria-label="閱讀階段">{TABS.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}{item.phase && <small>{item.phase}</small>}</button>)}</nav>
+        <nav className="tabbar" aria-label="閱讀階段">{TABS.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}</button>)}</nav>
         {!selectedPaper ? <Welcome onUpload={() => fileRef.current?.click()} /> : <div className="content-scroll">
           <div className="paper-title-row"><div><span className="eyebrow">{selectedPaper.filename}</span><h1>{selectedPaper.title ?? '尚未擷取論文標題'}</h1><p>{selectedPaper.authors.join('、') || '作者未報告'}{selectedPaper.year ? ` · ${selectedPaper.year}` : ''}</p></div><div className="paper-actions"><button className="small-button" onClick={() => exportPaperMarkdown(selectedPaper)}>匯出報告</button><button className="danger-link" onClick={() => removePaper(selectedPaper)}>刪除</button></div></div>
           {!selectedDocument && <div className="reattach-banner"><div><strong>找不到已保存的原始 PDF</strong><p>可能是瀏覽器儲存空間已被清除。請選擇同一檔案，系統會用 SHA-256 核對並重新保存。</p></div><button className="secondary-button" onClick={() => reattachRef.current?.click()}>重新附檔</button><input ref={reattachRef} hidden type="file" accept="application/pdf,.pdf" onChange={(event) => void reattach(event.target.files?.[0])} /></div>}
@@ -600,7 +600,7 @@ function Pass2View({ paper, onRun, onEvidence, onJump }: { paper: Paper; onRun: 
 function Pass3View({ paper, userPlan, setUserPlan, onRun }: { paper: Paper; userPlan: string; setUserPlan: (value: string) => void; onRun: () => void }) {
   const text = paper.pass3Text?.trim()
   const data = paper.pass3
-  return <div className="section-stack"><section className="analysis-control"><div><span className="eyebrow">VIRTUAL RECONSTRUCTION</span><h2>第三遍：重建與批判</h2><p>根據第一遍、第二遍、筆記與螢光重點重新分析；不重新讀取全文，直接產生文字報告。</p></div><div className="reimplementation"><label>如果由我重新實作，我會怎麼做？<textarea value={userPlan} onChange={(event) => setUserPlan(event.target.value)} placeholder="先寫下自己的方案，再與 AI 建議並列…" /></label><div className="reimplementation-actions"><button className="secondary-button" disabled title="全文重讀功能尚未開放">全文重讀（尚未開放）</button><button className="primary-button" disabled={!paper.pass2} onClick={onRun}>{text || data ? '依最新筆記與螢光重點重新分析' : '產生第三遍文字報告'}</button></div></div></section>{text ? <section className="content-card pass3-text-card"><div className="section-title"><div><span className="eyebrow">MARKDOWN / HTML REPORT</span><h2>第三遍閱讀報告</h2></div><button className="small-button" onClick={() => exportPass3Text(paper, text)}>下載 .txt</button></div><div className="pass3-rich-output" dangerouslySetInnerHTML={{ __html: markdownToHtml(text) }} /></section> : data ? <><section className="content-card"><h2>重建程序</h2><div className="reconstruction-list">{data.reconstruction.map((item, index) => <article key={`${item.step}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><h3>{item.step}<i className={`recon-status ${item.status}`}>{item.status}</i></h3><p>{item.detail}</p></div></article>)}</div></section><div className="two-column"><CriticalList title="隱藏假設" items={data.assumptions} /><CriticalList title="效度威脅" items={data.threats} /><CriticalList title="可重現風險" items={data.reproducibilityRisks} /></div><section><div className="section-title"><div><span className="eyebrow">AI-GENERATED, TESTABLE</span><h2>後續研究題目</h2></div></div><div className="idea-grid">{data.researchIdeas.map((item, index) => <article key={item.question}><span>IDEA {index + 1}</span><h3>{item.question}</h3><p><b>動機：</b>{item.motivation}</p><p><b>假設：</b>{item.hypothesis}</p><p><b>最小實驗：</b>{item.minimumExperiment}</p><p><b>資料／指標：</b>{item.requiredData} · {item.metric}</p></article>)}</div></section></> : <EmptyAnalysis title="尚未進入第三遍" text="先完成第二遍，並寫下自己的重建思路。" />}</div>
+  return <div className="section-stack"><section className="analysis-control pass3-control"><div><span className="eyebrow">VIRTUAL RECONSTRUCTION</span><h2>第三遍：重建與批判</h2><p>根據第一遍、第二遍、筆記與螢光重點重新分析；不重新讀取全文，直接產生文字報告。</p></div><div className="reimplementation"><label>如果由我重新實作，我會怎麼做？<textarea value={userPlan} onChange={(event) => setUserPlan(event.target.value)} placeholder="先寫下自己的方案，再與 AI 建議並列…" /></label><div className="reimplementation-actions"><button className="secondary-button" disabled title="全文重讀功能尚未開放">全文重讀（尚未開放）</button><button className="primary-button" disabled={!paper.pass2} onClick={onRun}>{text || data ? '依最新筆記與螢光重點重新分析' : '產生第三遍文字報告'}</button></div></div></section>{text ? <section className="content-card pass3-text-card"><div className="section-title"><div><span className="eyebrow">MARKDOWN / HTML REPORT</span><h2>第三遍閱讀報告</h2></div><button className="small-button" onClick={() => exportPass3Text(paper, text)}>下載 .txt</button></div><div className="pass3-rich-output" dangerouslySetInnerHTML={{ __html: markdownToHtml(text) }} /></section> : data ? <><section className="content-card"><h2>重建程序</h2><div className="reconstruction-list">{data.reconstruction.map((item, index) => <article key={`${item.step}-${index}`}><span>{String(index + 1).padStart(2, '0')}</span><div><h3>{item.step}<i className={`recon-status ${item.status}`}>{item.status}</i></h3><p>{item.detail}</p></div></article>)}</div></section><div className="two-column"><CriticalList title="隱藏假設" items={data.assumptions} /><CriticalList title="效度威脅" items={data.threats} /><CriticalList title="可重現風險" items={data.reproducibilityRisks} /></div><section><div className="section-title"><div><span className="eyebrow">AI-GENERATED, TESTABLE</span><h2>後續研究題目</h2></div></div><div className="idea-grid">{data.researchIdeas.map((item, index) => <article key={item.question}><span>IDEA {index + 1}</span><h3>{item.question}</h3><p><b>動機：</b>{item.motivation}</p><p><b>假設：</b>{item.hypothesis}</p><p><b>最小實驗：</b>{item.minimumExperiment}</p><p><b>資料／指標：</b>{item.requiredData} · {item.metric}</p></article>)}</div></section></> : <EmptyAnalysis title="尚未進入第三遍" text="先完成第二遍，並寫下自己的重建思路。" />}</div>
 }
 
 function CriticalList({ title, items }: { title: string; items: Array<{ title: string; assessment: string; status: string }> }) {

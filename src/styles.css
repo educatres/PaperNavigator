@@ -231,6 +231,8 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .reimplementation textarea { min-height: 80px; }
 .reimplementation-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; margin-top: 7px; }
 .reimplementation-actions button { margin-top: 0; }
+.pass3-control .reimplementation { width: min(75vw, 100%); }
+.pass3-control .reimplementation-actions { justify-content: flex-start; flex-wrap: nowrap; }
 .reconstruction-list { display: grid; gap: 1px; background: var(--line); }
 .reconstruction-list article { display: grid; grid-template-columns: 45px 1fr; padding: 12px; background: #faf9f5; }
 .reconstruction-list article > span { color: #a1aaa9; font: 10px 'DM Mono', monospace; }
@@ -401,6 +403,7 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
   .three-step-grid article { border-right: 0; border-bottom: 1px solid var(--line); }
   .analysis-control { align-items: stretch; flex-direction: column; }
   .reimplementation { width: 100%; }
+  .pass3-control .reimplementation { width: 100%; }
 }
 
 @media (max-width: 640px) {
@@ -424,6 +427,7 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
   .pdf-toolbar .toolbar-actions { justify-content: flex-start; }
   .annotation-list article.highlight-record { grid-template-columns: auto 1fr; }
   .annotation-list article.highlight-record .annotation-actions { grid-column: 2; }
+  .pass3-control .reimplementation-actions { flex-wrap: wrap; }
   .usage-text { display: none; }
   .busy-overlay { padding: 16px; }
   .busy-overlay-card { padding: 30px 20px 24px; }
