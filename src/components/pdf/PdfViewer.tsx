@@ -110,9 +110,10 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
         <button className="small-button" onClick={zoomIn} aria-label="放大">＋</button>
         <button className={zoom === 'fit' ? 'small-button active' : 'small-button'} onClick={() => setZoom('fit')}>螢幕同寬</button>
         <button className={zoom === 1 ? 'small-button active' : 'small-button'} onClick={() => setZoom(1)}>100%</button>
-        <button className={tool === 'highlight' ? 'small-button active' : 'small-button'} onClick={() => switchTool('highlight')} aria-pressed={tool === 'highlight'}>螢光筆</button>
-        <button className={tool === 'erase' ? 'small-button active' : 'small-button'} onClick={() => switchTool('erase')} aria-pressed={tool === 'erase'}>刪除標記</button>
-        <button className={tool === 'roi' ? 'small-button active' : 'small-button'} onClick={() => switchTool('roi')} aria-pressed={tool === 'roi'}>AI 圈選</button>
+        <button className={tool === 'highlight' ? 'small-button active' : 'small-button'} onClick={() => switchTool('highlight')} aria-pressed={tool === 'highlight'} title="選取 PDF 文字並建立螢光標記"><span className="tool-icon" aria-hidden="true">🖍</span>螢光筆</button>
+        <div className="highlight-toolbar-palette" aria-label="螢光筆顏色">{(Object.keys(highlightColors) as PdfHighlightColor[]).map((item) => <button key={item} aria-label={`${colorLabels[item]}色螢光筆`} title={`${colorLabels[item]}色`} className={color === item ? 'active' : ''} style={{ background: highlightColors[item] }} onClick={() => setColor(item)} />)}</div>
+        <button className={tool === 'erase' ? 'small-button active' : 'small-button'} onClick={() => switchTool('erase')} aria-pressed={tool === 'erase'} title="點選頁面上的螢光標記即可刪除"><span className="tool-icon" aria-hidden="true">⌫</span>刪除標記</button>
+        <button className={tool === 'roi' ? 'small-button active' : 'small-button'} onClick={() => switchTool('roi')} aria-pressed={tool === 'roi'} title="拖曳框選 PDF 的 Figure 或 Table，交給 AI 解讀"><span className="tool-icon" aria-hidden="true">⌗</span>AI 圈選</button>
       </div>
     </div>
     <div className={`pdf-viewport mode-${tool}`} ref={viewportRef} onScroll={handleScroll}>
@@ -145,10 +146,9 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
     </div>
     {tool === 'highlight' && <div className="pdf-annotation-actions">
       <p>選取文字後會合併成一筆螢光標記；標記會隨專案自動保存。</p>
-      <div className="highlight-palette" aria-label="螢光筆顏色">{(Object.keys(highlightColors) as PdfHighlightColor[]).map((item) => <button key={item} aria-label={`${colorLabels[item]}色螢光筆`} title={`${colorLabels[item]}色`} className={color === item ? 'active' : ''} style={{ background: highlightColors[item] }} onClick={() => setColor(item)} />)}</div>
     </div>}
     {tool === 'erase' && <div className="pdf-annotation-actions erase-hint"><p>點選頁面上的螢光標記即可刪除，不會影響分析或筆記。</p></div>}
-    {tool === 'roi' && <div className="pdf-annotation-actions"><p>拖曳框選 Figure／Table，再請 AI 針對區域解讀；摘要會保存到「筆記與匯出」。</p></div>}
+    {tool === 'roi' && <div className="pdf-annotation-actions"><p>拖曳框選 Figure／Table，再請 AI 針對區域解讀；摘要會保存到「筆記與重點標記」。</p></div>}
   </aside>
 }
 
@@ -252,9 +252,10 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWid
       }))
     if (!rects.length) return
     const first = rects[0]
-    // One text selection is one saved annotation. Keep only the first visual
-    // block so a wrapped selection cannot create duplicate records.
-    onAddHighlight({ id: crypto.randomUUID(), paperId, pdfPageIndex: pageIndex, ...first, color, text: current.toString().trim() || undefined, createdAt: new Date().toISOString() })
+    // One text selection is one saved annotation. Keep every visual block in
+    // the same record so a wrapped or multi-line selection is highlighted and
+    // translated as one complete segment.
+    onAddHighlight({ id: crypto.randomUUID(), paperId, pdfPageIndex: pageIndex, ...first, rects, color, text: current.toString().trim() || undefined, createdAt: new Date().toISOString() })
     current.removeAllRanges()
   }
 

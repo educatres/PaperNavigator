@@ -280,6 +280,12 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .notes-list article { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; padding: 11px; background: #f7f5ef; }
 .notes-list p { margin: 0; }
 .pass3-text-output { margin: 0; padding: 18px; white-space: pre-wrap; overflow-wrap: anywhere; background: #f7f5ef; color: #293537; font: 14px/1.8 'Noto Serif TC', Georgia, serif; }
+.pass3-rich-output { padding: 18px; background: #f7f5ef; color: #293537; font: 14px/1.8 'Noto Serif TC', Georgia, serif; }
+.pass3-rich-output h1, .pass3-rich-output h2, .pass3-rich-output h3, .pass3-rich-output h4 { margin: 0 0 9px; color: #34464d; font-family: inherit; }
+.pass3-rich-output p { margin: 0 0 12px; }
+.pass3-rich-output ul, .pass3-rich-output ol { margin: 0 0 12px; padding-left: 24px; }
+.pass3-rich-output li { margin: 4px 0; }
+.pass3-rich-output code { padding: 2px 4px; background: #e8ece8; font-family: 'DM Mono', monospace; font-size: 12px; }
 .annotation-summary { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
 .annotation-summary strong { padding: 6px 8px; color: #536368; background: #f1f0eb; font: 9px 'DM Mono', monospace; }
 .annotation-list { display: grid; gap: 7px; }
@@ -309,6 +315,11 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-toolbar strong { font-size: 11px; }
 .pdf-toolbar span { color: #98a9aa; font: 9px 'DM Mono', monospace; }
 .pdf-toolbar .icon-button, .pdf-toolbar .small-button { color: #d7dfde; border-color: #53656c; background: #31474f; }
+.pdf-toolbar .tool-icon { display: inline-block; margin-right: 3px; color: inherit; font: 13px/1 sans-serif; }
+.highlight-toolbar-palette { display: flex; align-items: center; gap: 3px; margin-left: -2px; }
+.highlight-toolbar-palette button { width: 18px; height: 18px; padding: 0; border: 2px solid rgba(215,223,222,.35); border-radius: 50%; cursor: pointer; }
+.highlight-toolbar-palette button:hover { border-color: #fff; }
+.highlight-toolbar-palette button.active { border-color: #fff; box-shadow: 0 0 0 1px #263942; }
 .pdf-viewport { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 14px; text-align: center; }
 .pdf-loading { padding: 28px; color: #657376; font-size: 11px; }
 .pdf-viewport.mode-highlight, .pdf-viewport.mode-highlight .pdf-text-layer span { cursor: default; }
