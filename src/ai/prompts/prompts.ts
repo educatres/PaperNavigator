@@ -41,12 +41,38 @@ export function highlightTranslationPrompt(text: string) {
 ${wrapUntrusted('highlight-text', text)}`
 }
 
-export function cleanHighlightResponse(value: string, prompt: string) {
+function escapedRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function stripHighlightResponseLead(value: string) {
+  let cleaned = value.trim()
+  const leads = [
+    /^Need to produce Chinese summary of highlighted text,?\s*max\s+3\s+sentences?\.?\s*/i,
+    /^The user wants translation of the highlighted text\.\s*Provide translation in Traditional Chinese, preserving format\.?\s*/i,
+    /^(?:original|highlighted)\s+(?:English\s+)?text\s*[:：]\s*/i,
+    /^原文\s*[:：]\s*/,
+  ]
+  for (const lead of leads) cleaned = cleaned.replace(lead, '').trim()
+  return cleaned
+}
+
+function stripEchoedHighlightText(value: string, sourceText: string) {
+  const source = sourceText.trim()
+  if (!source) return value.trim()
+  const words = source.split(/\s+/).filter(Boolean)
+  const sourcePattern = words.map(escapedRegExp).join('\\s+')
+  if (!sourcePattern) return value.trim()
+  const echoed = new RegExp(`^[\\s"'“”‘’*_#：:：-]*${sourcePattern}[\\s"'“”‘’*_#，,。.!！?？:：-]*`, 'i')
+  return value.replace(echoed, '').trim()
+}
+
+export function cleanHighlightResponse(value: string, prompt: string, sourceText = '') {
   let cleaned = value.trim()
   const exactPrompt = prompt.trim()
-  if (!cleaned || cleaned === exactPrompt) return ''
+  if (!cleaned || (exactPrompt && cleaned === exactPrompt)) return ''
 
-  const promptIndex = cleaned.indexOf(exactPrompt)
+  const promptIndex = exactPrompt ? cleaned.indexOf(exactPrompt) : -1
   if (promptIndex >= 0) {
     cleaned = `${cleaned.slice(0, promptIndex)}\n${cleaned.slice(promptIndex + exactPrompt.length)}`.trim()
   }
@@ -55,9 +81,10 @@ export function cleanHighlightResponse(value: string, prompt: string) {
   if (appearsToBePrompt) {
     const marker = '</untrusted-highlight-text>'
     const markerIndex = cleaned.lastIndexOf(marker)
-    return markerIndex >= 0 ? cleaned.slice(markerIndex + marker.length).trim() : ''
+    cleaned = markerIndex >= 0 ? cleaned.slice(markerIndex + marker.length).trim() : ''
   }
-  return cleaned
+  cleaned = stripHighlightResponseLead(cleaned)
+  return stripEchoedHighlightText(cleaned, sourceText)
 }
 
 export function tablePrompt(label: string, pageIndex: number, pageText: string) {

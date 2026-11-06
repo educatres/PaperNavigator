@@ -1,6 +1,7 @@
 import type { AnalysisUsage, ModelInfo, PdfDocumentData, ProviderConfig } from '../../domain/types'
 import { pagesForPrompt } from '../../pdf/pdfClient'
 import { SYSTEM_INSTRUCTIONS, wrapUntrusted } from '../security'
+import { googleText, responsesText } from './outputText'
 
 export const GOOGLE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 export const CGU_BASE_URL = 'https://air.cgu.edu.tw/cgullmapi/v1'
@@ -102,15 +103,6 @@ function bytesToBase64(bytes: Uint8Array) {
   const chunk = 0x8000
   for (let index = 0; index < bytes.length; index += chunk) binary += String.fromCharCode(...bytes.subarray(index, Math.min(index + chunk, bytes.length)))
   return btoa(binary)
-}
-
-function googleText(body: any) {
-  return body.candidates?.[0]?.content?.parts?.map((part: any) => part.text ?? '').join('') ?? ''
-}
-
-function responsesText(body: any) {
-  if (typeof body.output_text === 'string') return body.output_text
-  return (body.output ?? []).flatMap((item: any) => item.content ?? []).map((part: any) => part.text ?? '').join('')
 }
 
 function usageFromGoogle(body: any): AnalysisUsage {

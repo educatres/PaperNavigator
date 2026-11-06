@@ -371,6 +371,9 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .annotation-source { font-weight: 600; }
 .annotation-generated { margin-top: 7px !important; padding: 7px 8px; background: #fff; color: #526166; }
 .annotation-generated > strong { display: block; margin-bottom: 5px; color: #347d75; }
+.annotation-generated-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 5px; }
+.annotation-generated-heading strong { color: #347d75; }
+.annotation-generated-heading .danger-link { flex: 0 0 auto; }
 .markdown-output > div { font-size: 10px; line-height: 1.65; }
 .markdown-output h1, .markdown-output h2, .markdown-output h3, .markdown-output h4 { margin: 0 0 5px; color: #34464d; font-family: inherit; font-size: 11px; }
 .markdown-output p { margin: 0 0 5px; }

@@ -33,4 +33,19 @@ describe('highlight AI prompts', () => {
     expect(cleanHighlightResponse(`${prompt}\n\n### 重點\n測試摘要`, prompt)).toBe('### 重點\n測試摘要')
     expect(cleanHighlightResponse('這是正常摘要。', prompt)).toBe('這是正常摘要。')
   })
+
+  it('removes the leaked summary instruction shown in the result', () => {
+    const prompt = highlightSummaryPrompt(selected)
+    const response = 'Need to produce Chinese summary of highlighted text, max 3 sentences. 本段說明測試集的準確率為 92%。'
+
+    expect(cleanHighlightResponse(response, prompt, selected)).toBe('本段說明測試集的準確率為 92%。')
+  })
+
+  it('removes the leaked translation instruction and echoed English source', () => {
+    const prompt = highlightTranslationPrompt(selected)
+    const response = `The user wants translation of the highlighted text. Provide translation in Traditional Chinese, preserving format.${selected}\n準確率為 92%。\n使用了保留測試集。`
+
+    expect(cleanHighlightResponse(response, prompt, selected)).toBe('準確率為 92%。\n使用了保留測試集。')
+    expect(cleanHighlightResponse(response, '', selected)).toBe('準確率為 92%。\n使用了保留測試集。')
+  })
 })

@@ -86,8 +86,18 @@ function markdownToHtml(value: string) {
   }).join('')
 }
 
-function MarkdownOutput({ label, value }: { label: string; value: string }) {
-  return <div className="annotation-generated markdown-output"><strong>{label}</strong><div dangerouslySetInnerHTML={{ __html: markdownToHtml(value) }} /></div>
+function MarkdownOutput({ label, value, onDelete }: { label: string; value: string; onDelete?: () => void }) {
+  return <div className="annotation-generated markdown-output"><div className="annotation-generated-heading"><strong>{label}</strong>{onDelete && <button className="danger-link" onClick={onDelete} aria-label={`刪除${label}`}>刪除</button>}</div><div className="markdown-output-body" dangerouslySetInnerHTML={{ __html: markdownToHtml(value) }} /></div>
+}
+
+function HighlightOutputs({ highlight, onDelete }: { highlight: PdfHighlight; onDelete: (output: 'aiSummary' | 'translation') => void }) {
+  const sourceText = highlight.text ?? ''
+  const aiSummary = cleanHighlightResponse(highlight.aiSummary ?? '', '', sourceText)
+  const translation = cleanHighlightResponse(highlight.translation ?? '', '', sourceText)
+  return <>
+    {aiSummary && <MarkdownOutput label="AI 摘要" value={aiSummary} onDelete={() => onDelete('aiSummary')} />}
+    {translation && <MarkdownOutput label="翻譯" value={translation} onDelete={() => onDelete('translation')} />}
+  </>
 }
 
 function BusyOverlay({ message, onCancel }: { message: string; onCancel?: () => void }) {
@@ -396,7 +406,7 @@ export default function App() {
       const prompt = action === 'summary' ? highlightSummaryPrompt(sourceText) : highlightTranslationPrompt(sourceText)
       const response = await generateText(config, prompt, signal)
       setLastUsage(response.usage)
-      const value = cleanHighlightResponse(response.text, prompt)
+      const value = cleanHighlightResponse(response.text, prompt, sourceText)
       if (!value) throw new Error('模型沒有回傳可保存的文字。')
       updatePaper(selectedPaper!.id, (paper) => ({
         ...paper,
@@ -557,7 +567,7 @@ export default function App() {
           {tab === 'pass3' && <Pass3View paper={selectedPaper} userPlan={userPlan} setUserPlan={setUserPlan} onRun={runPass3} />}
           {tab === 'compare' && <CompareView papers={bundle.papers} selectedIds={compareIds} setSelectedIds={setCompareIds} query={compareQuery} setQuery={setCompareQuery} rows={rows} comparison={comparison} onExport={() => exportComparisonCsv(selectedComparePapers)} onSelectPaper={(id: string, page: number | null) => { setSelectedId(id); setPageIndex(page ?? 0) }} />}
           {tab === 'research' && <ResearchView papers={bundle.papers} coCitations={coCitations} onVerify={(paperId: string, citationId: string) => void verifyReference(paperId, citationId)} onBib={() => exportBibTeX(bundle.papers)} onRis={() => exportRis(bundle.papers)} />}
-          {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onDeleteHighlight={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))} onDeleteAiSummary={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: (paper.aiRegionSummaries ?? []).filter((summary) => summary.id !== id) }))} onHighlightAction={runHighlightTextAction} onChangeHighlightColor={updateHighlightColor} onJump={setPageIndex} onMarkdown={() => exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={() => { if (window.confirm('清除瀏覽器中的整個專案？請先匯出 JSON 備份。')) void clearBundle().then(() => { setBundle(emptyBundle()); setDocuments({}); setSelectedId('') }) }} />}
+          {tab === 'notes' && <NotesView paper={selectedPaper} text={noteText} setText={setNoteText} verification={noteVerification} setVerification={setNoteVerification} onAdd={addNote} onDelete={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, notes: paper.notes.filter((note) => note.id !== id) }))} onDeleteHighlight={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))} onDeleteHighlightOutput={(id: string, output: 'aiSummary' | 'translation') => updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((highlight) => highlight.id === id ? { ...highlight, [output]: undefined } : highlight) }))} onDeleteAiSummary={(id: string) => updatePaper(selectedPaper.id, (paper) => ({ ...paper, aiRegionSummaries: (paper.aiRegionSummaries ?? []).filter((summary) => summary.id !== id) }))} onHighlightAction={runHighlightTextAction} onChangeHighlightColor={updateHighlightColor} onJump={setPageIndex} onMarkdown={() => exportPaperMarkdown(selectedPaper)} onJson={() => exportProjectJson({ ...bundle, exportedAt: new Date().toISOString() })} onClear={() => { if (window.confirm('清除瀏覽器中的整個專案？請先匯出 JSON 備份。')) void clearBundle().then(() => { setBundle(emptyBundle()); setDocuments({}); setSelectedId('') }) }} />}
         </div>}
       </section>
       <PdfViewer
@@ -650,6 +660,7 @@ interface NotesViewProps {
   onAdd: () => void
   onDelete: (id: string) => void
   onDeleteHighlight: (id: string) => void
+  onDeleteHighlightOutput: (id: string, output: 'aiSummary' | 'translation') => void
   onDeleteAiSummary: (id: string) => void
   onHighlightAction: (id: string, action: 'summary' | 'translation') => void
   onChangeHighlightColor: (id: string, color: PdfHighlight['color']) => void
@@ -659,7 +670,7 @@ interface NotesViewProps {
   onClear: () => void
 }
 
-function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onDeleteHighlight, onDeleteAiSummary, onHighlightAction, onChangeHighlightColor, onJump, onMarkdown, onJson, onClear }: NotesViewProps) {
+function NotesView({ paper, text, setText, verification, setVerification, onAdd, onDelete, onDeleteHighlight, onDeleteHighlightOutput, onDeleteAiSummary, onHighlightAction, onChangeHighlightColor, onJump, onMarkdown, onJson, onClear }: NotesViewProps) {
   const summaries = paper.aiRegionSummaries ?? []
   const colors: Array<{ id: PdfHighlight['color']; label: string }> = [{ id: 'yellow', label: '黃' }, { id: 'green', label: '綠' }, { id: 'pink', label: '粉紅' }, { id: 'blue', label: '淺藍' }]
   return <div className="section-stack">
@@ -684,8 +695,7 @@ function NotesView({ paper, text, setText, verification, setVerification, onAdd,
             <button className="small-button" disabled={!highlight.text?.trim()} onClick={() => onHighlightAction(highlight.id, 'translation')}>翻譯</button>
             <button className="danger-link" onClick={() => onDeleteHighlight(highlight.id)}>刪除</button>
           </div>
-            {highlight.aiSummary && <MarkdownOutput label="AI 摘要" value={highlight.aiSummary} />}
-            {highlight.translation && <MarkdownOutput label="翻譯" value={highlight.translation} />}
+            <HighlightOutputs highlight={highlight} onDelete={(output) => onDeleteHighlightOutput(highlight.id, output)} />
           </div>
         </article>) : <p>尚未建立螢光標記。</p>}
         <h3>AI 圈選摘要</h3>
