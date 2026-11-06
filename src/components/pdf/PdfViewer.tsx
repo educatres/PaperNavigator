@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import type { PdfDocumentData, PdfHighlight, PdfHighlightColor, PdfHighlightRect } from '../../domain/types'
+import type { PdfDocumentData, PdfHighlight, PdfHighlightColor, PdfHighlightRect, PdfParagraphTranslation } from '../../domain/types'
 import { openPdf, renderPdfPage } from '../../pdf/pdfClient'
 
 interface Props {
@@ -8,6 +8,8 @@ interface Props {
   paperId: string
   pageIndex: number
   highlights: PdfHighlight[]
+  translations: PdfParagraphTranslation[]
+  onTranslate: () => void
   onPageChange: (pageIndex: number) => void
   onAddHighlight: (highlight: PdfHighlight) => void
   onDeleteHighlight: (id: string) => void
@@ -109,7 +111,7 @@ function selectionElement(node: Node | null) {
   return element?.closest('span') ?? element
 }
 
-export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChange, onAddHighlight, onDeleteHighlight }: Props) {
+export function PdfViewer({ document, paperId, pageIndex, highlights, translations, onTranslate, onPageChange, onAddHighlight, onDeleteHighlight }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const pageNodes = useRef<Record<number, HTMLDivElement | null>>({})
   const visiblePage = useRef(pageIndex)
@@ -206,7 +208,7 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
     <div className="pdf-toolbar">
       <div>
         <strong>原文 PDF</strong>
-        <span>第 {pageIndex + 1} / {pageCount} 頁 · {highlights.length} 個標記 · {zoomLabel}</span>
+        <span>第 {pageIndex + 1} / {pageCount} 頁 · {highlights.length} 個標記 · {translations.length} 個翻譯 · {zoomLabel}</span>
       </div>
       <div className="toolbar-actions">
         <button className="small-button" onClick={zoomOut} aria-label="縮小">−</button>
@@ -217,6 +219,7 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
         <button className={tool === 'highlight' ? 'small-button active' : 'small-button'} onClick={() => switchTool('highlight')} aria-pressed={tool === 'highlight'} title="選取 PDF 文字並建立螢光標記"><span className="tool-icon" aria-hidden="true">🖍</span>螢光筆</button>
         <div className="highlight-toolbar-palette" aria-label="螢光筆顏色">{(Object.keys(highlightColors) as PdfHighlightColor[]).map((item) => <button key={item} aria-label={`${colorLabels[item]}色螢光筆`} title={`${colorLabels[item]}色`} className={color === item ? 'active' : ''} style={{ background: highlightColors[item] }} onClick={() => setColor(item)} />)}</div>
         <button className={tool === 'erase' ? 'small-button active' : 'small-button'} onClick={() => switchTool('erase')} aria-pressed={tool === 'erase'} title="點選頁面上的螢光標記即可刪除"><span className="tool-icon" aria-hidden="true">⌫</span>刪除標記</button>
+        <button className="small-button pdf-translate-button" onClick={onTranslate} title="擷取 PDF 段落並逐段翻譯成繁體中文"><span className="tool-icon" aria-hidden="true">文</span>{translations.length ? '更新翻譯' : '逐段翻譯'}</button>
       </div>
     </div>
     <div className={`pdf-viewport mode-${tool}${isPanning ? ' panning' : ''}`} ref={viewportRef} onScroll={handleScroll} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
@@ -235,6 +238,7 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
             pageIndex={index}
             paperId={paperId}
             highlights={highlights.filter((highlight) => highlight.pdfPageIndex === index)}
+            translations={translations.filter((translation) => translation.pdfPageIndex === index)}
             tool={tool}
             color={color}
             viewportWidth={viewportWidth}
@@ -254,6 +258,7 @@ interface PdfPageProps {
   pageIndex: number
   paperId: string
   highlights: PdfHighlight[]
+  translations: PdfParagraphTranslation[]
   tool: PdfTool
   color: PdfHighlightColor
   viewportWidth: number
@@ -262,7 +267,7 @@ interface PdfPageProps {
   onDeleteHighlight: (id: string) => void
 }
 
-function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWidth, zoom, onAddHighlight, onDeleteHighlight }: PdfPageProps) {
+function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, color, viewportWidth, zoom, onAddHighlight, onDeleteHighlight }: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const textLayerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState('')
@@ -353,6 +358,22 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWid
         onClick={(event) => { event.stopPropagation(); if (tool === 'erase') onDeleteHighlight(highlight.id) }}
         style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%`, background: highlightColors[highlight.color] }}
       />))}
+      {translations.map((translation) => {
+        const anchor = translation.lines[0]
+        if (!anchor) return null
+        const alignRight = anchor.x > .55
+        return <div
+          key={translation.id}
+          className={`pdf-translation-anchor${alignRight ? ' align-right' : ''}`}
+          style={{ left: `${Math.max(.008, anchor.x - .035) * 100}%`, top: `${anchor.y * 100}%` }}
+        >
+          <button className="pdf-translation-marker" aria-label="顯示這一段的中文翻譯" title="移入查看中文翻譯">文</button>
+          <div className="pdf-translation-popover" role="tooltip">
+            <strong>中文翻譯</strong>
+            <p>{translation.translation}</p>
+          </div>
+        </div>
+      })}
     </div>
     {renderError && <p className="inline-error">{renderError}</p>}
   </div>

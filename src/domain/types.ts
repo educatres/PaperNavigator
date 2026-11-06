@@ -27,6 +27,19 @@ export interface PdfHighlightRect {
   height: number
 }
 
+export interface PdfParagraphTranslation {
+  id: string
+  paperId: string
+  pdfPageIndex: number
+  order: number
+  sourceText: string
+  sourceHash: string
+  lines: PdfHighlightRect[]
+  translation: string
+  model: string
+  createdAt: string
+}
+
 /** @deprecated Retained only so older project backups can still be imported. */
 export interface AiRegionSummary {
   id: string
@@ -125,6 +138,7 @@ export interface Paper {
   notes: UserNote[]
   floatingNote?: string
   highlights: PdfHighlight[]
+  pdfTranslations?: PdfParagraphTranslation[]
   /** @deprecated Legacy import compatibility; no longer shown or created. */
   aiRegionSummaries?: AiRegionSummary[]
   analysisModel?: string

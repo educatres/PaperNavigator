@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { PdfViewer } from './components/pdf/PdfViewer'
-import type { AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
+import type { AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, PdfParagraphTranslation, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
 import { analyzePass1, analyzePass2, analyzePass3 } from './ai/orchestrator/analysis'
 import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
-import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, PASS3_PROMPT_VERSION } from './ai/prompts/prompts'
+import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, paragraphTranslationPrompt, PASS3_PROMPT_VERSION } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
+import { extractPdfParagraphSources } from './pdf/pdfParagraphs'
 import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
-import { exportFullReportHtml, exportPaperMarkdown, exportPass3Html, exportProjectJson, importProjectJson } from './storage/exports'
+import { exportPaperMarkdown, exportPass3Html, exportProjectJson, importProjectJson, openFullReportHtml } from './storage/exports'
 import { markdownToHtml, richTextToHtml } from './lib/richText'
 import { clearAllSettings, readActiveProvider, readProviderConfig, saveProviderConfig } from './storage/apiKeyStore'
 
@@ -263,7 +264,7 @@ export default function App() {
           id, projectId: bundle.project.id, sha256: data.sha256, filename: data.filename,
           title: data.title, authors: data.author ? data.author.split(/[,;]/).map((item) => item.trim()).filter(Boolean) : [],
           year: null, doi: null, pageCount: data.pageCount, size: data.size, uploadTime: now,
-          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], floatingNote: '', highlights: [],
+          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], floatingNote: '', highlights: [], pdfTranslations: [],
         })
       }
       if (nextPapers.length) {
@@ -406,6 +407,55 @@ export default function App() {
     }, false, '選取的文字')
   }
 
+  const translatePdfParagraphs = () => {
+    if (!selectedPaper || !selectedDocument) { setError('請先選取並附上 PDF。'); return }
+    const paperId = selectedPaper.id
+    const pdfDocument = selectedDocument
+    void startJob('正在逐段翻譯', async (signal) => {
+      const paragraphs = await extractPdfParagraphSources(pdfDocument, paperId, signal, (page, total) => {
+        setBusy(`正在擷取段落 ${page} / ${total} 頁`)
+      })
+      const eligible = paragraphs.filter((paragraph) => paragraph.role !== 'excluded' && paragraph.role !== 'review' && paragraph.sourceText.length >= 2)
+      const saved = new Map((selectedPaper.pdfTranslations ?? []).map((item) => [item.id, item]))
+      const pending = eligible.filter((paragraph) => {
+        const existing = saved.get(paragraph.id)
+        return !existing || existing.sourceHash !== paragraph.sourceHash || !existing.translation.trim()
+      })
+      if (!eligible.length) throw new Error('這份 PDF 沒有可翻譯的文字段落。')
+      if (!pending.length) {
+        setMessage(`已完成 ${eligible.length} 個段落的翻譯，沒有需要更新的內容。`)
+        return
+      }
+
+      for (const [index, paragraph] of pending.entries()) {
+        signal.throwIfAborted()
+        setBusy(`正在逐段翻譯 ${index + 1} / ${pending.length}`)
+        const response = await generateText(config, paragraphTranslationPrompt(paragraph.sourceText), signal)
+        const translation = response.text.trim()
+        if (!translation) throw new Error(`第 ${paragraph.pdfPageIndex + 1} 頁的段落沒有取得翻譯。`)
+        const record: PdfParagraphTranslation = {
+          id: paragraph.id,
+          paperId,
+          pdfPageIndex: paragraph.pdfPageIndex,
+          order: paragraph.order,
+          sourceText: paragraph.sourceText,
+          sourceHash: paragraph.sourceHash,
+          lines: paragraph.lines,
+          translation,
+          model: `${config.id}:${config.modelId}`,
+          createdAt: new Date().toISOString(),
+        }
+        updatePaper(paperId, (paper) => ({
+          ...paper,
+          pdfTranslations: [...(paper.pdfTranslations ?? []).filter((item) => item.id !== record.id), record]
+            .sort((left, right) => left.pdfPageIndex - right.pdfPageIndex || left.order - right.order),
+        }))
+        setLastUsage(response.usage)
+      }
+      setMessage(`已完成 ${eligible.length} 個段落的繁體中文翻譯。`)
+    }, false, 'PDF 擷取的段落文字')
+  }
+
   const updateHighlightColor = (highlightId: string, color: PdfHighlight['color']) => {
     if (!selectedPaper) return
     updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.map((item) => item.id === highlightId ? { ...item, color } : item) }))
@@ -528,7 +578,7 @@ export default function App() {
         <label>模型<select value={config.modelId} disabled={!models.length} onChange={(event) => { setConfig((current) => ({ ...current, modelId: event.target.value })); setConnectionState('idle') }}><option value="">請先讀取模型清單</option>{models.map((model) => <option key={model.id} value={model.id}>{model.id}</option>)}</select></label>
       </div>
       <div className="settings-footer">
-        <p><strong>本機保存：</strong>Provider、Base URL、模型與 API Key 會保留在此瀏覽器；PDF 原檔、分析與螢光標記保存在 IndexedDB。資料不會寫入 repository，共用電腦請使用紅色「清除設定」及專案清除功能。</p>
+        <p><strong>本機保存：</strong>Provider、Base URL、模型與 API Key 會保留在此瀏覽器；PDF 原檔、分析、螢光標記與逐段翻譯保存在 IndexedDB。資料不會寫入 repository，共用電腦請使用紅色「清除設定」及專案清除功能。</p>
         <div className="settings-actions">
           <button className="secondary-button" disabled={!config.apiKey || connectionState === 'testing'} onClick={() => void loadModelList()}>讀取模型清單</button>
           <button className="secondary-button" disabled={!config.apiKey || !config.modelId || connectionState === 'testing'} onClick={() => void testConnection()}>{connectionState === 'ready' ? '✓ 重新測試連線' : '測試連線'}</button>
@@ -549,11 +599,6 @@ export default function App() {
 
     <main className="workspace-layout" style={workspaceStyle}>
       <aside className="library-panel">
-        <div className="project-editor">
-          <span className="eyebrow">RESEARCH PROJECT</span>
-          <input className="project-name" value={bundle.project.name} onChange={(event) => updateBundle((current) => ({ ...current, project: { ...current.project, name: event.target.value } }))} aria-label="專案名稱" />
-          <textarea value={bundle.project.researchQuestion} onChange={(event) => updateBundle((current) => ({ ...current, project: { ...current.project, researchQuestion: event.target.value } }))} placeholder="輸入你的研究問題（選填）" aria-label="研究問題" />
-        </div>
         <div className="library-heading"><span>論文書架</span><span>{bundle.papers.length} / 10</span><button className="library-toggle" onClick={() => setLibraryCollapsed((value) => !value)} aria-label={libraryCollapsed ? '展開論文書架' : '收起論文書架'} title={libraryCollapsed ? '展開論文書架' : '收起論文書架'}>{libraryCollapsed ? '»' : '«'}</button></div>
         <div className="paper-list">
           {bundle.papers.map((paper) => <div key={paper.id} className={paper.id === selectedId ? 'paper-item selected' : 'paper-item'}>
@@ -573,7 +618,7 @@ export default function App() {
       </aside>
 
       <section className="content-panel">
-        <nav className="tabbar" aria-label="閱讀階段"><button className={floatingNoteOpen ? 'note-trigger active' : 'note-trigger'} disabled={!selectedPaper} onClick={() => setFloatingNoteOpen((value) => !value)} aria-pressed={floatingNoteOpen}>筆記</button><button className={tab === 'notes' ? 'highlight-trigger active' : 'highlight-trigger'} disabled={!selectedPaper} onClick={() => setTab('notes')}><span aria-hidden="true">★</span>重點標記</button>{TABS.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}</button>)}<button className="full-report-trigger" disabled={!canExportFullReport} title={canExportFullReport ? '下載包含三遍分析與證據附錄的 A4 列印版' : '完成三遍閱讀後即可匯出'} onClick={() => selectedPaper && exportFullReportHtml(selectedPaper)}>完整報告</button></nav>
+        <nav className="tabbar" aria-label="閱讀階段"><button className={floatingNoteOpen ? 'note-trigger active' : 'note-trigger'} disabled={!selectedPaper} onClick={() => setFloatingNoteOpen((value) => !value)} aria-pressed={floatingNoteOpen}>筆記</button><button className={tab === 'notes' ? 'highlight-trigger active' : 'highlight-trigger'} disabled={!selectedPaper} onClick={() => setTab('notes')}><span aria-hidden="true">★</span>重點標記</button>{TABS.map((item) => <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => setTab(item.id)}>{item.label}</button>)}<button className="full-report-trigger" disabled={!canExportFullReport} title={canExportFullReport ? '在新分頁開啟包含三遍分析與證據附錄的 A4 報告' : '完成三遍閱讀後即可開啟'} onClick={() => { if (selectedPaper && !openFullReportHtml(selectedPaper)) setError('瀏覽器阻擋了新分頁，請允許此網站開啟彈出式視窗。') }}>完整報告</button></nav>
         {!selectedPaper ? <Welcome onUpload={() => fileRef.current?.click()} /> : <div className="content-scroll">
           {tab === 'overview' && <div className="paper-title-row"><div><span className="eyebrow">{selectedPaper.filename}</span><h1>{selectedPaper.title ?? '尚未擷取論文標題'}</h1><p>{selectedPaper.authors.join('、') || '作者未報告'}{selectedPaper.year ? ` · ${selectedPaper.year}` : ''}</p></div><div className="paper-actions"><button className="small-button" onClick={() => exportPaperMarkdown(selectedPaper)}>匯出報告</button><button className="danger-link" onClick={() => removePaper(selectedPaper)}>刪除</button></div></div>}
           {!selectedDocument && <div className="reattach-banner"><div><strong>找不到已保存的原始 PDF</strong><p>可能是瀏覽器儲存空間已被清除。請選擇同一檔案，系統會用 SHA-256 核對並重新保存。</p></div><button className="secondary-button" onClick={() => reattachRef.current?.click()}>重新附檔</button><input ref={reattachRef} hidden type="file" accept="application/pdf,.pdf" onChange={(event) => void reattach(event.target.files?.[0])} /></div>}
@@ -590,6 +635,8 @@ export default function App() {
         paperId={selectedPaper?.id ?? ''}
         pageIndex={pageIndex}
         highlights={selectedPaper?.highlights ?? []}
+        translations={selectedPaper?.pdfTranslations ?? []}
+        onTranslate={translatePdfParagraphs}
         onPageChange={setPageIndex}
         onAddHighlight={(highlight: PdfHighlight) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: [...paper.highlights, highlight] }))}
         onDeleteHighlight={(id: string) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: paper.highlights.filter((highlight) => highlight.id !== id) }))}

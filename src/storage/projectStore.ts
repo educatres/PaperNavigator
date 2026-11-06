@@ -39,6 +39,7 @@ export function migrateBundle(value: ProjectBundle): ProjectBundle {
       notes: paper.notes ?? [],
       floatingNote: paper.floatingNote ?? '',
       highlights: paper.highlights ?? [],
+      pdfTranslations: paper.pdfTranslations ?? [],
       aiRegionSummaries: paper.aiRegionSummaries ?? [],
     })),
     comparisons: clean.comparisons ?? [],

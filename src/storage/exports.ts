@@ -124,7 +124,7 @@ function fullReportEvidenceIds(paper: Paper) {
 
 export function fullReportHtmlDocument(paper: Paper) {
   if (!paper.pass1 || !paper.pass2 || (!paper.pass3 && !paper.pass3Text?.trim())) {
-    throw new Error('請先完成三遍閱讀，再匯出 A4 完整報告。')
+    throw new Error('請先完成三遍閱讀，再開啟 A4 完整報告。')
   }
 
   const pass1 = paper.pass1
@@ -182,9 +182,14 @@ export function fullReportHtmlDocument(paper: Paper) {
 </main></body></html>`
 }
 
-export function exportFullReportHtml(paper: Paper) {
-  const title = paper.pass1?.title ?? paper.title ?? paper.filename
-  download(`${safeName(title)}-三遍閱讀報告-A4.html`, fullReportHtmlDocument(paper), 'text/html;charset=utf-8')
+export function openFullReportHtml(paper: Paper) {
+  const opened = window.open('about:blank', '_blank')
+  if (!opened) return false
+  opened.opener = null
+  opened.document.open()
+  opened.document.write(fullReportHtmlDocument(paper))
+  opened.document.close()
+  return true
 }
 
 function csvSafe(value: unknown) {
