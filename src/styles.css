@@ -105,6 +105,10 @@ textarea { resize: vertical; min-height: 72px; }
 .paper-item { width: 100%; display: flex; gap: 9px; padding: 11px 8px; border: 0; border-left: 3px solid transparent; background: transparent; text-align: left; cursor: pointer; }
 .paper-item:hover { background: rgba(255,255,255,.55); }
 .paper-item.selected { background: #fff; border-left-color: var(--accent); box-shadow: 0 3px 12px rgba(42,54,57,.06); }
+.paper-select { min-width: 0; display: flex; flex: 1; gap: 9px; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.paper-select:focus-visible { outline: 2px solid rgba(214,104,72,.45); outline-offset: -2px; }
+.paper-item-delete { flex: 0 0 auto; align-self: flex-start; padding: 1px 4px; border: 0; border-radius: 3px; color: #9d4a3a; background: transparent; cursor: pointer; font-size: 16px; line-height: 1; opacity: .45; }
+.paper-item-delete:hover { opacity: 1; background: #f7e3dd; }
 .paper-index { color: #a5adad; font: 10px 'DM Mono', monospace; padding-top: 2px; }
 .paper-copy { min-width: 0; display: flex; flex: 1; flex-direction: column; gap: 4px; }
 .paper-copy strong { overflow: hidden; color: #283b43; font-size: 11px; line-height: 1.45; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -323,6 +327,8 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .highlight-toolbar-palette button:hover { border-color: #fff; }
 .highlight-toolbar-palette button.active { border-color: #fff; box-shadow: 0 0 0 1px #263942; }
 .pdf-viewport { position: relative; flex: 1; min-height: 0; overflow: auto; padding: 14px; text-align: center; }
+.pdf-viewport.mode-pan { cursor: grab; user-select: none; }
+.pdf-viewport.mode-pan.panning { cursor: grabbing; }
 .pdf-loading { padding: 28px; color: #657376; font-size: 11px; }
 .pdf-viewport.mode-highlight, .pdf-viewport.mode-highlight .pdf-text-layer span { cursor: default; }
 .pdf-viewport.mode-roi { cursor: crosshair; }

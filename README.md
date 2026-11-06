@@ -36,7 +36,7 @@ npm.cmd run build
 
 ## API 連線
 
-介面支援兩種 provider，模型清單由 API 動態取得後，只顯示實際讀到的 `gemma-4-26b-a4b-it` 與 `gpt-oss-120b`；預設為 `gemma-4-26b-a4b-it`：
+介面支援兩種 provider，模型清單由 API 動態取得後，只顯示實際讀到的 `gpt-oss-120b` 與 `gemma-4-26b-a4b-it`；CGU 預設為 `gpt-oss-120b`：
 
 | Provider | Base URL | PDF 資料流 | 生成 API |
 | --- | --- | --- | --- |

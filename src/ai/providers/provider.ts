@@ -4,8 +4,8 @@ import { SYSTEM_INSTRUCTIONS, wrapUntrusted } from '../security'
 
 export const GOOGLE_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 export const CGU_BASE_URL = 'https://air.cgu.edu.tw/cgullmapi/v1'
-export const DEFAULT_MODEL_ID = 'gemma-4-26b-a4b-it'
-export const SUPPORTED_MODEL_IDS = [DEFAULT_MODEL_ID, 'gpt-oss-120b'] as const
+export const DEFAULT_MODEL_ID = 'gpt-oss-120b'
+export const SUPPORTED_MODEL_IDS = [DEFAULT_MODEL_ID, 'gemma-4-26b-a4b-it'] as const
 
 interface RawGeneration {
   text: string

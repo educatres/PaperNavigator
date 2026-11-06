@@ -419,10 +419,15 @@ export default function App() {
 
   const removePaper = (paper: Paper) => {
     if (!window.confirm(`刪除「${paper.title ?? paper.filename}」及其分析、筆記與比較資料？`)) return
+    const wasSelected = paper.id === selectedId
     updateBundle((current) => ({ ...current, papers: current.papers.filter((item) => item.id !== paper.id), comparisons: current.comparisons.map((item) => ({ ...item, paperIds: item.paperIds.filter((id) => id !== paper.id) })).filter((item) => item.paperIds.length >= 2) }))
     setDocuments((current) => { const next = { ...current }; delete next[paper.id]; return next })
     void deletePdfDocument(paper.id).catch(reportError)
-    setSelectedId(bundle.papers.find((item) => item.id !== paper.id)?.id ?? '')
+    if (wasSelected) {
+      setSelectedId(bundle.papers.find((item) => item.id !== paper.id)?.id ?? '')
+      setPageIndex(0)
+      setTab('overview')
+    }
   }
 
   const addNote = () => {
@@ -525,10 +530,13 @@ export default function App() {
         </div>
         <div className="library-heading"><span>論文書架</span><span>{bundle.papers.length} / 10</span></div>
         <div className="paper-list">
-          {bundle.papers.map((paper) => <button key={paper.id} className={paper.id === selectedId ? 'paper-item selected' : 'paper-item'} onClick={() => { setSelectedId(paper.id); setPageIndex(0); setTab('overview') }}>
-            <span className="paper-index">{String(bundle.papers.indexOf(paper) + 1).padStart(2, '0')}</span>
-            <span className="paper-copy"><strong>{paper.title ?? paper.filename}</strong><small>{paper.year ?? '年份未報告'} · {paper.pageCount} 頁</small><span className="pass-dots"><i className={paper.pass1 ? 'done' : ''}>1</i><i className={paper.pass2 ? 'done' : ''}>2</i><i className={paper.pass3 || paper.pass3Text ? 'done' : ''}>3</i></span></span>
-          </button>)}
+          {bundle.papers.map((paper) => <div key={paper.id} className={paper.id === selectedId ? 'paper-item selected' : 'paper-item'}>
+            <button type="button" className="paper-select" onClick={() => { setSelectedId(paper.id); setPageIndex(0); setTab('overview') }}>
+              <span className="paper-index">{String(bundle.papers.indexOf(paper) + 1).padStart(2, '0')}</span>
+              <span className="paper-copy"><strong>{paper.title ?? paper.filename}</strong><small>{paper.year ?? '年份未報告'} · {paper.pageCount} 頁</small><span className="pass-dots"><i className={paper.pass1 ? 'done' : ''}>1</i><i className={paper.pass2 ? 'done' : ''}>2</i><i className={paper.pass3 || paper.pass3Text ? 'done' : ''}>3</i></span></span>
+            </button>
+            <button type="button" className="paper-item-delete" aria-label={`刪除 ${paper.title ?? paper.filename}`} title="刪除這篇 PDF" onClick={(event) => { event.stopPropagation(); removePaper(paper) }}>×</button>
+          </div>)}
           {!bundle.papers.length && <div className="empty-library"><span>＋</span><p>匯入第一篇研究論文</p><button className="small-button" onClick={() => fileRef.current?.click()}>選擇 PDF</button></div>}
         </div>
         <div className="library-footer">

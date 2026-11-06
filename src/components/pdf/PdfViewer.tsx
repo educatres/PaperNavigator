@@ -16,7 +16,7 @@ interface Props {
 }
 
 interface Rect { x: number; y: number; width: number; height: number }
-type PdfTool = 'browse' | 'highlight' | 'erase' | 'roi'
+type PdfTool = 'browse' | 'pan' | 'highlight' | 'erase' | 'roi'
 type Zoom = 'fit' | number
 
 const highlightColors: Record<PdfHighlightColor, string> = {
@@ -39,6 +39,8 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
   const [color, setColor] = useState<PdfHighlightColor>('yellow')
   const [zoom, setZoom] = useState<Zoom>('fit')
   const [viewportWidth, setViewportWidth] = useState(720)
+  const panStart = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null)
+  const [isPanning, setIsPanning] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -93,6 +95,27 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
   const switchTool = (next: PdfTool) => setTool((current) => current === next ? 'browse' : next)
   const zoomIn = () => setZoom((current) => current === 'fit' ? 1.25 : Math.min(3, Number((current + 0.25).toFixed(2))))
   const zoomOut = () => setZoom((current) => current === 'fit' ? 0.75 : Math.max(0.5, Number((current - 0.25).toFixed(2))))
+  const beginPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (tool !== 'pan' || event.button !== 0) return
+    const viewport = event.currentTarget
+    panStart.current = { x: event.clientX, y: event.clientY, scrollLeft: viewport.scrollLeft, scrollTop: viewport.scrollTop }
+    setIsPanning(true)
+    viewport.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+  const movePan = (event: React.PointerEvent<HTMLDivElement>) => {
+    const start = panStart.current
+    if (!start || tool !== 'pan') return
+    const viewport = event.currentTarget
+    viewport.scrollLeft = start.scrollLeft - (event.clientX - start.x)
+    viewport.scrollTop = start.scrollTop - (event.clientY - start.y)
+    event.preventDefault()
+  }
+  const endPan = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    panStart.current = null
+    setIsPanning(false)
+  }
 
   if (!document) return <aside className="pdf-panel empty-viewer"><div><span className="empty-icon">⌁</span><h2>原文檢視器</h2><p>選取論文後可連續檢視、文字標記與 AI 圈選。</p></div></aside>
 
@@ -110,13 +133,14 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChan
         <button className="small-button" onClick={zoomIn} aria-label="放大">＋</button>
         <button className={zoom === 'fit' ? 'small-button active' : 'small-button'} onClick={() => setZoom('fit')}>螢幕同寬</button>
         <button className={zoom === 1 ? 'small-button active' : 'small-button'} onClick={() => setZoom(1)}>100%</button>
+        <button className={tool === 'pan' ? 'small-button active' : 'small-button'} onClick={() => switchTool('pan')} aria-pressed={tool === 'pan'} title="按住滑鼠左鍵拖曳來移動 PDF"><span className="tool-icon" aria-hidden="true">✋</span>手掌</button>
         <button className={tool === 'highlight' ? 'small-button active' : 'small-button'} onClick={() => switchTool('highlight')} aria-pressed={tool === 'highlight'} title="選取 PDF 文字並建立螢光標記"><span className="tool-icon" aria-hidden="true">🖍</span>螢光筆</button>
         <div className="highlight-toolbar-palette" aria-label="螢光筆顏色">{(Object.keys(highlightColors) as PdfHighlightColor[]).map((item) => <button key={item} aria-label={`${colorLabels[item]}色螢光筆`} title={`${colorLabels[item]}色`} className={color === item ? 'active' : ''} style={{ background: highlightColors[item] }} onClick={() => setColor(item)} />)}</div>
         <button className={tool === 'erase' ? 'small-button active' : 'small-button'} onClick={() => switchTool('erase')} aria-pressed={tool === 'erase'} title="點選頁面上的螢光標記即可刪除"><span className="tool-icon" aria-hidden="true">⌫</span>刪除標記</button>
         <button className={tool === 'roi' ? 'small-button active' : 'small-button'} onClick={() => switchTool('roi')} aria-pressed={tool === 'roi'} title="拖曳框選 PDF 的 Figure 或 Table，交給 AI 解讀"><span className="tool-icon" aria-hidden="true">⌗</span>AI 圈選</button>
       </div>
     </div>
-    <div className={`pdf-viewport mode-${tool}`} ref={viewportRef} onScroll={handleScroll}>
+    <div className={`pdf-viewport mode-${tool}${isPanning ? ' panning' : ''}`} ref={viewportRef} onScroll={handleScroll} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
       {renderError && <p className="inline-error">{renderError}</p>}
       {!pdf && !renderError && <p className="pdf-loading">正在載入 PDF…</p>}
       {pdf && <div className="pdf-document-stage">
