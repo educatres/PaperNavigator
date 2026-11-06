@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { highlightSummaryPrompt, highlightTranslationPrompt } from '../ai/prompts/prompts'
+import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt } from '../ai/prompts/prompts'
 
 describe('highlight AI prompts', () => {
   const selected = 'Accuracy was 92%.\nThe held-out test set was used.'
@@ -24,5 +24,13 @@ describe('highlight AI prompts', () => {
     expect(prompt).toContain('不可刪節、濃縮、摘要、改寫')
     expect(prompt).toContain('跨越的所有行與句子')
     expect(prompt).toContain('不可刪節、濃縮、摘要、改寫或補充螢光區域以外的內容')
+  })
+
+  it('does not display an echoed prompt as generated content', () => {
+    const prompt = highlightSummaryPrompt(selected)
+
+    expect(cleanHighlightResponse(prompt, prompt)).toBe('')
+    expect(cleanHighlightResponse(`${prompt}\n\n### 重點\n測試摘要`, prompt)).toBe('### 重點\n測試摘要')
+    expect(cleanHighlightResponse('這是正常摘要。', prompt)).toBe('這是正常摘要。')
   })
 })

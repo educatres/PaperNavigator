@@ -7,7 +7,7 @@ import type { ComparisonRow } from './domain/comparison'
 import { analyzePass1, analyzePass2, analyzePass3 } from './ai/orchestrator/analysis'
 import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { analyzeImageRegion, CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
-import { highlightSummaryPrompt, highlightTranslationPrompt, roiPrompt } from './ai/prompts/prompts'
+import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, roiPrompt } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
 import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
 import { exportBibTeX, exportComparisonCsv, exportPaperMarkdown, exportPass3Text, exportProjectJson, exportRis, importProjectJson } from './storage/exports'
@@ -396,7 +396,7 @@ export default function App() {
       const prompt = action === 'summary' ? highlightSummaryPrompt(sourceText) : highlightTranslationPrompt(sourceText)
       const response = await generateText(config, prompt, signal)
       setLastUsage(response.usage)
-      const value = response.text.trim()
+      const value = cleanHighlightResponse(response.text, prompt)
       if (!value) throw new Error('模型沒有回傳可保存的文字。')
       updatePaper(selectedPaper!.id, (paper) => ({
         ...paper,

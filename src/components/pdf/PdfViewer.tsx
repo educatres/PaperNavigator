@@ -29,6 +29,74 @@ const highlightColors: Record<PdfHighlightColor, string> = {
 const colorLabels: Record<PdfHighlightColor, string> = { yellow: '黃', green: '綠', pink: '粉紅', blue: '淺藍' }
 const pageRects = (highlight: PdfHighlight): PdfHighlightRect[] => highlight.rects?.length ? highlight.rects : [{ x: highlight.x, y: highlight.y, width: highlight.width, height: highlight.height }]
 
+interface TextSpanInfo {
+  span: HTMLSpanElement
+  rect: DOMRect
+  centerX: number
+}
+
+function textSpanInfos(textLayer: HTMLElement) {
+  return Array.from(textLayer.querySelectorAll('span'))
+    .map((span) => {
+      const rect = span.getBoundingClientRect()
+      return { span, rect, centerX: rect.left + rect.width / 2 }
+    })
+    .filter((item): item is TextSpanInfo => item.rect.width >= 1 && item.rect.height >= 1)
+}
+
+function findColumnBoundary(spans: TextSpanInfo[], stageWidth: number) {
+  if (spans.length < 6) return null
+  const sorted = [...spans].sort((a, b) => a.rect.top - b.rect.top || a.rect.left - b.rect.left)
+  const lines: TextSpanInfo[][] = []
+  for (const item of sorted) {
+    const line = lines[lines.length - 1]
+    const tolerance = Math.max(3, item.rect.height * .55)
+    if (!line || Math.abs(item.rect.top - line[0].rect.top) > tolerance) lines.push([item])
+    else line.push(item)
+  }
+
+  const minimumGap = Math.max(36, stageWidth * .05)
+  const candidates: Array<{ midpoint: number; gap: number; lineTop: number }> = []
+  for (const line of lines) {
+    const ordered = [...line].sort((a, b) => a.rect.left - b.rect.left)
+    for (let index = 1; index < ordered.length; index += 1) {
+      const left = ordered[index - 1]
+      const right = ordered[index]
+      const gap = right.rect.left - left.rect.right
+      if (gap >= minimumGap) candidates.push({ midpoint: (left.rect.right + right.rect.left) / 2, gap, lineTop: line[0].rect.top })
+    }
+  }
+  if (!candidates.length) return null
+
+  const tolerance = Math.max(24, stageWidth * .04)
+  const clusters: Array<{ midpoint: number; gap: number; lineTops: number[] }> = []
+  for (const candidate of candidates) {
+    const cluster = clusters.find((item) => Math.abs(item.midpoint - candidate.midpoint) <= tolerance)
+    if (cluster) {
+      cluster.midpoint = (cluster.midpoint * cluster.lineTops.length + candidate.midpoint) / (cluster.lineTops.length + 1)
+      cluster.gap = Math.max(cluster.gap, candidate.gap)
+      cluster.lineTops.push(candidate.lineTop)
+    } else clusters.push({ midpoint: candidate.midpoint, gap: candidate.gap, lineTops: [candidate.lineTop] })
+  }
+
+  const supported = clusters
+    .filter((cluster) => new Set(cluster.lineTops.map((top) => Math.round(top))).size >= 3)
+    .map((cluster) => {
+      const leftCount = spans.filter((item) => item.centerX < cluster.midpoint).length
+      const rightCount = spans.filter((item) => item.centerX > cluster.midpoint).length
+      return { ...cluster, score: cluster.lineTops.length * 100 + cluster.gap, valid: leftCount >= 3 && rightCount >= 3 }
+    })
+    .filter((cluster) => cluster.valid)
+    .sort((a, b) => b.score - a.score)
+  return supported[0]?.midpoint ?? null
+}
+
+function selectionElement(node: Node | null) {
+  if (!node) return null
+  const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node instanceof Element ? node : null
+  return element?.closest('span') ?? element
+}
+
 export function PdfViewer({ document, paperId, pageIndex, highlights, onPageChange, onAnalyzeRegion, onAddAiRegionSummary, onAddHighlight, onDeleteHighlight }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const pageNodes = useRef<Record<number, HTMLDivElement | null>>({})
@@ -262,12 +330,49 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWid
     const range = current.getRangeAt(0)
     if (!textLayerRef.current.contains(range.commonAncestorContainer)) return
     const stage = canvasRef.current.getBoundingClientRect()
-    const rects = Array.from(range.getClientRects())
+    const rawRects = Array.from(range.getClientRects())
       .map((rect) => ({
         x: Math.max(stage.left, rect.left), y: Math.max(stage.top, rect.top),
         right: Math.min(stage.right, rect.right), bottom: Math.min(stage.bottom, rect.bottom),
       }))
       .filter((rect) => rect.right - rect.x >= 2 && rect.bottom - rect.y >= 2)
+    if (!rawRects.length) return
+
+    const allSpans = textSpanInfos(textLayerRef.current)
+    const selectedSpans = allSpans
+      .filter((span) => {
+        try { return range.intersectsNode(span.span) } catch { return false }
+      })
+
+    const columnBoundary = findColumnBoundary(allSpans, stage.width)
+    let activeColumnBoundary: number | null = null
+    let keepLeftColumn = true
+    if (columnBoundary !== null) {
+      const selectedLeft = selectedSpans.filter((item) => item.centerX < columnBoundary).length
+      const selectedRight = selectedSpans.filter((item) => item.centerX > columnBoundary).length
+      if (selectedLeft > 0 && selectedRight > 0) {
+        activeColumnBoundary = columnBoundary
+        const anchorRect = selectionElement(current.anchorNode)?.getBoundingClientRect()
+        const anchorX = anchorRect ? anchorRect.left + anchorRect.width / 2 : rawRects[0].x
+        keepLeftColumn = anchorX <= activeColumnBoundary
+      }
+    }
+
+    const columnSpans = activeColumnBoundary === null
+      ? selectedSpans
+      : selectedSpans.filter((item) => keepLeftColumn ? item.centerX <= activeColumnBoundary! : item.centerX >= activeColumnBoundary!)
+    const clippedText = columnSpans.map(({ span }) => {
+      const spanRange = document.createRange()
+      spanRange.selectNodeContents(span)
+      try {
+        if (range.compareBoundaryPoints(Range.START_TO_START, spanRange) > 0) spanRange.setStart(range.startContainer, range.startOffset)
+        if (range.compareBoundaryPoints(Range.END_TO_END, spanRange) < 0) spanRange.setEnd(range.endContainer, range.endOffset)
+        return spanRange.toString()
+      } catch { return '' }
+    }).join(' ').replace(/\s+/g, ' ').trim()
+    const text = clippedText || (activeColumnBoundary === null ? current.toString().trim() : columnSpans.map(({ span }) => span.textContent ?? '').join(' ').replace(/\s+/g, ' ').trim())
+    const rects = rawRects
+      .filter((rect) => activeColumnBoundary === null || (keepLeftColumn ? (rect.x + rect.right) / 2 <= activeColumnBoundary : (rect.x + rect.right) / 2 >= activeColumnBoundary))
       .map((rect) => ({
         x: (rect.x - stage.left) / stage.width, y: (rect.y - stage.top) / stage.height,
         width: (rect.right - rect.x) / stage.width, height: (rect.bottom - rect.y) / stage.height,
@@ -277,7 +382,7 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, tool, color, viewportWid
     // One text selection is one saved annotation. Keep every visual block in
     // the same record so a wrapped or multi-line selection is highlighted and
     // translated as one complete segment.
-    onAddHighlight({ id: crypto.randomUUID(), paperId, pdfPageIndex: pageIndex, ...first, rects, color, text: current.toString().trim() || undefined, createdAt: new Date().toISOString() })
+    onAddHighlight({ id: crypto.randomUUID(), paperId, pdfPageIndex: pageIndex, ...first, rects, color, text: text || undefined, createdAt: new Date().toISOString() })
     current.removeAllRanges()
   }
 
