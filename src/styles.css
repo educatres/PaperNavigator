@@ -404,7 +404,12 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-translation-floating-close:hover, .pdf-translation-floating-close:focus-visible { color: #8a291f; background: #f3e6dc; outline: none; }
 .pdf-translation-floating p { max-height: 160px; margin: 0; overflow: auto; white-space: pre-wrap; }
 .pdf-translation-floating .pending-source { color: #5f6d71; font-style: italic; }
-.pdf-translation-floating > .danger-link { align-self: flex-end; padding: 0; font-size: calc(9px * var(--font-scale)); }
+.pdf-translation-floating.editing { max-height: 340px; }
+.pdf-translation-editor { box-sizing: border-box; width: 100%; min-height: 130px; max-height: 230px; resize: vertical; padding: 8px 9px; border: 1px solid #a8aaa2; border-radius: 5px; color: #26343a; background: #fff; font: inherit; line-height: 1.55; }
+.pdf-translation-editor:focus { border-color: #7d671f; outline: 2px solid rgba(200,178,111,.28); outline-offset: 1px; }
+.pdf-translation-floating-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.pdf-translation-floating-actions .text-button, .pdf-translation-floating-actions .danger-link { padding: 0; font-size: calc(9px * var(--font-scale)); }
+.pdf-translation-floating-actions .small-button { padding: 4px 9px; }
 .pdf-translation-area-selection { position: absolute; z-index: 9; box-sizing: border-box; border: 2px solid #6c797d; border-radius: 3px; background: transparent; box-shadow: 0 0 0 1px rgba(255,255,255,.65), 0 2px 8px rgba(31,44,48,.18); pointer-events: none; }
 .pdf-screenshot-selection { position: absolute; z-index: 9; border: 2px solid #d66848; background: rgba(214,104,72,.14); box-shadow: 0 0 0 9999px rgba(19,35,41,.18); pointer-events: none; }
 .pdf-annotation-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border-top: 1px solid #bbb8b1; background: #fff8d9; }

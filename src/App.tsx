@@ -549,6 +549,15 @@ export default function App() {
     setMessage('已清除這一段的摘要註釋。')
   }
 
+  const updatePdfSummary = (id: string, summary: string) => {
+    if (!selectedPaper || !summary.trim()) return
+    updatePaper(selectedPaper.id, (paper) => ({
+      ...paper,
+      pdfAreaSummaries: (paper.pdfAreaSummaries ?? []).map((item) => item.id === id ? { ...item, summary: summary.trim() } : item),
+    }))
+    setMessage('已儲存編輯後的 AI 摘要。')
+  }
+
   const clearPdfSummaries = () => {
     if (!selectedPaper) return
     const summaries = selectedPaper.pdfAreaSummaries ?? []
@@ -570,6 +579,15 @@ export default function App() {
     }
     updatePaper(selectedPaper.id, (paper) => ({ ...paper, pdfTranslations: (paper.pdfTranslations ?? []).filter((item) => item.id !== id) }))
     setMessage('已清除這一段的翻譯註釋。')
+  }
+
+  const updatePdfTranslation = (id: string, translation: string) => {
+    if (!selectedPaper || !translation.trim()) return
+    updatePaper(selectedPaper.id, (paper) => ({
+      ...paper,
+      pdfTranslations: (paper.pdfTranslations ?? []).map((item) => item.id === id ? { ...item, translation: translation.trim() } : item),
+    }))
+    setMessage('已儲存編輯後的翻譯。')
   }
 
   const clearPdfTranslations = () => {
@@ -794,6 +812,8 @@ export default function App() {
         onCancelTranslation={() => translationAbortRef.current?.abort()}
         onDeleteTranslation={removePdfTranslation}
         onDeleteSummary={removePdfSummary}
+        onUpdateTranslation={updatePdfTranslation}
+        onUpdateSummary={updatePdfSummary}
         onClearTranslations={clearPdfTranslations}
         onClearSummaries={clearPdfSummaries}
         onCollapse={() => setPdfPanelCollapsed(true)}

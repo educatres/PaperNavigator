@@ -22,6 +22,8 @@ interface Props {
   onCancelTranslation: () => void
   onDeleteTranslation: (id: string) => void
   onDeleteSummary: (id: string) => void
+  onUpdateTranslation: (id: string, value: string) => void
+  onUpdateSummary: (id: string, value: string) => void
   onClearTranslations: () => void
   onClearSummaries: () => void
   onCollapse: () => void
@@ -154,7 +156,7 @@ function selectionElement(node: Node | null) {
   return element?.closest('span') ?? element
 }
 
-export function PdfViewer({ document, paperId, pageIndex, highlights, translations, summaries, onAddTranslationSelection, onAddSummarySelection, onTranslateSelections, onSummarizeSelections, translationRunning, translationBlocked, backgroundTask, translationProgressLabel, onCancelTranslation, onDeleteTranslation, onDeleteSummary, onClearTranslations, onClearSummaries, onCollapse, onPageChange, onAddHighlight, onDeleteHighlight, onAddScreenshot }: Props) {
+export function PdfViewer({ document, paperId, pageIndex, highlights, translations, summaries, onAddTranslationSelection, onAddSummarySelection, onTranslateSelections, onSummarizeSelections, translationRunning, translationBlocked, backgroundTask, translationProgressLabel, onCancelTranslation, onDeleteTranslation, onDeleteSummary, onUpdateTranslation, onUpdateSummary, onClearTranslations, onClearSummaries, onCollapse, onPageChange, onAddHighlight, onDeleteHighlight, onAddScreenshot }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const pageNodes = useRef<Record<number, HTMLDivElement | null>>({})
   const visiblePage = useRef(pageIndex)
@@ -306,6 +308,8 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
             onDeleteHighlight={onDeleteHighlight}
             onDeleteTranslation={onDeleteTranslation}
             onDeleteSummary={onDeleteSummary}
+            onUpdateTranslation={onUpdateTranslation}
+            onUpdateSummary={onUpdateSummary}
             onAddScreenshot={onAddScreenshot}
           />
         </div>)}
@@ -335,15 +339,19 @@ interface PdfPageProps {
   onDeleteHighlight: (id: string) => void
   onDeleteTranslation: (id: string) => void
   onDeleteSummary: (id: string) => void
+  onUpdateTranslation: (id: string, value: string) => void
+  onUpdateSummary: (id: string, value: string) => void
   onAddScreenshot: (screenshot: PdfScreenshot) => void
 }
 
-function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries, tool, color, viewportWidth, zoom, onAddHighlight, onAddTranslationSelection, onAddSummarySelection, onDeleteHighlight, onDeleteTranslation, onDeleteSummary, onAddScreenshot }: PdfPageProps) {
+function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries, tool, color, viewportWidth, zoom, onAddHighlight, onAddTranslationSelection, onAddSummarySelection, onDeleteHighlight, onDeleteTranslation, onDeleteSummary, onUpdateTranslation, onUpdateSummary, onAddScreenshot }: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const textLayerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState('')
   const [activeTranslationId, setActiveTranslationId] = useState<string | null>(null)
   const [openTranslationPositions, setOpenTranslationPositions] = useState<Record<string, FloatingTranslationPosition>>({})
+  const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null)
+  const [annotationDraft, setAnnotationDraft] = useState('')
   const translationDrag = useRef<TranslationDragState | null>(null)
   const translationAreaStart = useRef<DragPoint | null>(null)
   const [translationAreaSelection, setTranslationAreaSelection] = useState<PdfHighlightRect | null>(null)
@@ -369,7 +377,8 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries,
       const next = Object.fromEntries(Object.entries(current).filter(([id]) => available.has(id)))
       return next
     })
-  }, [translations, summaries])
+    if (editingAnnotationId && !available.has(editingAnnotationId)) cancelAnnotationEdit()
+  }, [translations, summaries, editingAnnotationId])
 
   const openTranslation = (annotation: PdfAreaAnnotation) => {
     const anchor = annotation.lines[0]
@@ -391,6 +400,31 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries,
       delete next[id]
       return next
     })
+    if (editingAnnotationId === id) {
+      setEditingAnnotationId(null)
+      setAnnotationDraft('')
+    }
+  }
+
+  const beginAnnotationEdit = (annotation: PdfAreaAnnotation) => {
+    const output = isAreaSummary(annotation) ? annotation.summary : annotation.translation
+    if (!output) return
+    setEditingAnnotationId(annotation.id)
+    setAnnotationDraft(output)
+  }
+
+  const cancelAnnotationEdit = () => {
+    setEditingAnnotationId(null)
+    setAnnotationDraft('')
+  }
+
+  const saveAnnotationEdit = (annotation: PdfAreaAnnotation) => {
+    const value = annotationDraft.trim()
+    if (!value) return
+    if (isAreaSummary(annotation)) onUpdateSummary(annotation.id, value)
+    else onUpdateTranslation(annotation.id, value)
+    setEditingAnnotationId(null)
+    setAnnotationDraft('')
   }
 
   const beginTranslationDrag = (event: React.PointerEvent<HTMLDivElement>, id: string) => {
@@ -661,9 +695,10 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries,
         const position = openTranslationPositions[annotation.id]
         const summary = isAreaSummary(annotation)
         const output = summary ? annotation.summary : annotation.translation
+        const editing = editingAnnotationId === annotation.id
         return <div
           key={`${annotation.id}-floating`}
-          className="pdf-translation-floating"
+          className={`pdf-translation-floating${editing ? ' editing' : ''}`}
           role="dialog"
           aria-label={output ? (summary ? 'AI 摘要' : '中文翻譯') : `待${summary ? '摘要' : '翻譯'}段落`}
           style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
@@ -679,8 +714,21 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries,
             <strong>{output ? (summary ? 'AI 摘要' : '中文翻譯') : `待${summary ? '摘要' : '翻譯'}段落`}</strong>
             <button className="pdf-translation-floating-close" aria-label={`關閉${summary ? '摘要' : '翻譯'}文字框`} title="關閉" onPointerDown={(event) => event.stopPropagation()} onClick={() => closeTranslation(annotation.id)}>×</button>
           </div>
-          <p className={output ? '' : 'pending-source'}>{output || annotation.sourceText}</p>
-          <button className="danger-link" onClick={(event) => { event.stopPropagation(); closeTranslation(annotation.id); summary ? onDeleteSummary(annotation.id) : onDeleteTranslation(annotation.id) }}>清除此段</button>
+          {editing
+            ? <textarea
+                className="pdf-translation-editor"
+                aria-label={`編輯${summary ? 'AI 摘要' : '中文翻譯'}`}
+                value={annotationDraft}
+                autoFocus
+                onChange={(event) => setAnnotationDraft(event.target.value)}
+                onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && annotationDraft.trim()) saveAnnotationEdit(annotation) }}
+              />
+            : <p className={output ? '' : 'pending-source'}>{output || annotation.sourceText}</p>}
+          <div className="pdf-translation-floating-actions">
+            {editing
+              ? <><button className="text-button" onClick={cancelAnnotationEdit}>取消</button><button className="small-button" disabled={!annotationDraft.trim()} onClick={() => saveAnnotationEdit(annotation)}>儲存</button></>
+              : <>{output && <button className="text-button" onClick={() => beginAnnotationEdit(annotation)}>編輯</button>}<button className="danger-link" onClick={(event) => { event.stopPropagation(); closeTranslation(annotation.id); summary ? onDeleteSummary(annotation.id) : onDeleteTranslation(annotation.id) }}>清除此段</button></>}
+          </div>
         </div>
       })}
       {translationAreaSelection && <div className="pdf-translation-area-selection" aria-hidden="true" style={{ left: `${translationAreaSelection.x * 100}%`, top: `${translationAreaSelection.y * 100}%`, width: `${translationAreaSelection.width * 100}%`, height: `${translationAreaSelection.height * 100}%` }} />}
