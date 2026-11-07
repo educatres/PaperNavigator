@@ -11,6 +11,12 @@ interface Props {
   highlights: PdfHighlight[]
   translations: PdfParagraphTranslation[]
   onTranslate: () => void
+  translationRunning: boolean
+  translationBlocked: boolean
+  translationProgressLabel: string
+  onCancelTranslation: () => void
+  onDeleteTranslation: (id: string) => void
+  onClearTranslations: () => void
   onCollapse: () => void
   onPageChange: (pageIndex: number) => void
   onAddHighlight: (highlight: PdfHighlight) => void
@@ -114,7 +120,7 @@ function selectionElement(node: Node | null) {
   return element?.closest('span') ?? element
 }
 
-export function PdfViewer({ document, paperId, pageIndex, highlights, translations, onTranslate, onCollapse, onPageChange, onAddHighlight, onDeleteHighlight, onAddScreenshot }: Props) {
+export function PdfViewer({ document, paperId, pageIndex, highlights, translations, onTranslate, translationRunning, translationBlocked, translationProgressLabel, onCancelTranslation, onDeleteTranslation, onClearTranslations, onCollapse, onPageChange, onAddHighlight, onDeleteHighlight, onAddScreenshot }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const pageNodes = useRef<Record<number, HTMLDivElement | null>>({})
   const visiblePage = useRef(pageIndex)
@@ -223,10 +229,14 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
         <div className="highlight-toolbar-palette" aria-label="螢光筆顏色">{(Object.keys(highlightColors) as PdfHighlightColor[]).map((item) => <button key={item} aria-label={`${colorLabels[item]}色螢光筆`} title={`${colorLabels[item]}色`} className={color === item ? 'active' : ''} style={{ background: highlightColors[item] }} onClick={() => setColor(item)} />)}</div>
         <button className={tool === 'erase' ? 'small-button active' : 'small-button'} onClick={() => switchTool('erase')} aria-pressed={tool === 'erase'} title="點選頁面上的螢光標記即可刪除"><span className="tool-icon" aria-hidden="true">⌫</span>刪除標記</button>
         <button className={tool === 'screenshot' ? 'small-button active' : 'small-button'} onClick={() => switchTool('screenshot')} aria-pressed={tool === 'screenshot'} title="在 PDF 頁面拖曳範圍並保存截圖"><span className="tool-icon" aria-hidden="true">▣</span>圈選截圖</button>
-        <button className="small-button pdf-translate-button" onClick={onTranslate} title="擷取 PDF 段落並逐段翻譯成繁體中文"><span className="tool-icon" aria-hidden="true">文</span>{translations.length ? '更新翻譯' : '逐段翻譯'}</button>
+        {translationRunning
+          ? <button className="small-button translation-cancel-button" onClick={onCancelTranslation} title="停止背景逐段翻譯；已完成的譯文會保留"><span className="tool-icon" aria-hidden="true">■</span>停止翻譯</button>
+          : <button className="small-button pdf-translate-button" disabled={translationBlocked} onClick={onTranslate} title={translationBlocked ? '另一篇論文正在背景翻譯' : '擷取 PDF 段落並在背景逐段翻譯成繁體中文'}><span className="tool-icon" aria-hidden="true">文</span>{translations.length ? '接續翻譯' : '逐段翻譯'}</button>}
+        <button className="small-button" disabled={!translations.length} onClick={onClearTranslations} title="清除這篇論文的全部逐段翻譯">清除全部翻譯</button>
         <button className="small-button pdf-collapse-button" onClick={onCollapse} aria-label="收合 PDF Viewer" title="收合 PDF Viewer"><span aria-hidden="true">»</span>收合</button>
       </div>
     </div>
+    {translationRunning && <div className="pdf-background-progress"><span className="spinner" />{translationProgressLabel}<button className="text-button" onClick={onCancelTranslation}>停止</button></div>}
     <div className={`pdf-viewport mode-${tool}${isPanning ? ' panning' : ''}`} ref={viewportRef} onScroll={handleScroll} onPointerDown={beginPan} onPointerMove={movePan} onPointerUp={endPan} onPointerCancel={endPan}>
       {renderError && <p className="inline-error">{renderError}</p>}
       {!pdf && !renderError && <p className="pdf-loading">正在載入 PDF…</p>}
@@ -250,6 +260,7 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
             zoom={zoom}
             onAddHighlight={onAddHighlight}
             onDeleteHighlight={onDeleteHighlight}
+            onDeleteTranslation={onDeleteTranslation}
             onAddScreenshot={onAddScreenshot}
           />
         </div>)}
@@ -272,13 +283,15 @@ interface PdfPageProps {
   zoom: Zoom
   onAddHighlight: (highlight: PdfHighlight) => void
   onDeleteHighlight: (id: string) => void
+  onDeleteTranslation: (id: string) => void
   onAddScreenshot: (screenshot: PdfScreenshot) => void
 }
 
-function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, color, viewportWidth, zoom, onAddHighlight, onDeleteHighlight, onAddScreenshot }: PdfPageProps) {
+function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, color, viewportWidth, zoom, onAddHighlight, onDeleteHighlight, onDeleteTranslation, onAddScreenshot }: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const textLayerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState('')
+  const [activeTranslationId, setActiveTranslationId] = useState<string | null>(null)
   const screenshotStart = useRef<DragPoint | null>(null)
   const [screenshotSelection, setScreenshotSelection] = useState<PdfHighlightRect | null>(null)
 
@@ -410,6 +423,11 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
         onClick={(event) => { event.stopPropagation(); if (tool === 'erase') onDeleteHighlight(highlight.id) }}
         style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%`, background: highlightColors[highlight.color] }}
       />))}
+      {translations.filter((translation) => translation.id === activeTranslationId).flatMap((translation) => translation.lines.map((rect, index) => <div
+        key={`${translation.id}-source-${index}`}
+        className="pdf-translation-source-highlight"
+        style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` }}
+      />))}
       {translations.map((translation) => {
         const anchor = translation.lines[0]
         if (!anchor) return null
@@ -418,10 +436,14 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
           key={translation.id}
           className={`pdf-translation-anchor${alignRight ? ' align-right' : ''}`}
           style={{ left: `${Math.max(.008, anchor.x - .035) * 100}%`, top: `${anchor.y * 100}%` }}
+          onMouseEnter={() => setActiveTranslationId(translation.id)}
+          onMouseLeave={() => setActiveTranslationId(null)}
+          onFocus={() => setActiveTranslationId(translation.id)}
+          onBlur={() => setActiveTranslationId(null)}
         >
           <button className="pdf-translation-marker" aria-label="顯示這一段的中文翻譯" title="移入查看中文翻譯">文</button>
-          <div className="pdf-translation-popover" role="tooltip">
-            <strong>中文翻譯</strong>
+          <div className="pdf-translation-popover" role="group" aria-label="中文翻譯">
+            <div className="pdf-translation-popover-heading"><strong>中文翻譯</strong><button className="danger-link" onClick={(event) => { event.stopPropagation(); onDeleteTranslation(translation.id) }}>清除此段</button></div>
             <p>{translation.translation}</p>
           </div>
         </div>

@@ -79,6 +79,8 @@ textarea { resize: vertical; min-height: 72px; }
 
 .status-strip { min-height: 36px; display: flex; align-items: center; gap: 18px; padding: 7px 22px; background: #e2ded5; border-bottom: 1px solid #d1cdc4; color: #526166; font-size: calc(11px * var(--font-scale)); }
 .status-strip > span:first-child { display: flex; align-items: center; gap: 7px; }
+.translation-progress { display: flex; align-items: center; gap: 7px; margin-left: auto; color: #315d55; font-weight: 600; }
+.translation-progress ~ .usage-text { margin-left: 0; }
 .usage-text { margin-left: auto; color: #687578; }
 .spinner { width: 12px; height: 12px; border: 2px solid #b9b6af; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -356,6 +358,9 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-toolbar .small-button[aria-pressed="true"] { color: #172b35; border-color: #ffd66b; background: #ffd66b; box-shadow: 0 0 0 2px rgba(255,214,107,.28), inset 0 -2px 0 rgba(111,76,11,.18); font-weight: 700; }
 .pdf-toolbar .small-button[aria-pressed="true"] .tool-icon { color: #172b35; }
 .pdf-toolbar .tool-icon { display: inline-block; margin-right: 3px; color: inherit; font: calc(13px * var(--font-scale)) / 1 sans-serif; }
+.pdf-toolbar .translation-cancel-button { color: #ffe4dc; border-color: #b8705f; background: #704337; }
+.pdf-background-progress { display: flex; align-items: center; gap: 8px; padding: 6px 11px; border-bottom: 1px solid #99b7b1; color: #315d55; background: #e7f1ef; font-size: var(--reference-font-size); }
+.pdf-background-progress .text-button { margin-left: auto; color: #315d55; }
 .highlight-toolbar-palette { display: flex; align-items: center; gap: 3px; margin-left: -2px; }
 .highlight-toolbar-palette button { width: 18px; height: 18px; padding: 0; border: 2px solid rgba(215,223,222,.35); border-radius: 50%; cursor: pointer; }
 .highlight-toolbar-palette button:hover { border-color: #fff; }
@@ -383,11 +388,16 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-highlight.erase-ready { z-index: 5; pointer-events: auto; cursor: not-allowed; }
 .pdf-highlight.erase-ready:hover { outline: 2px solid #b44031; outline-offset: 1px; }
 .pdf-translation-anchor { position: absolute; z-index: 7; line-height: 1.5; }
+.pdf-translation-anchor::before { content: ''; position: absolute; bottom: 100%; left: 0; width: 22px; height: 10px; }
+.pdf-translation-source-highlight { position: absolute; z-index: 4; border-radius: 2px; background: rgba(102,112,118,.18); box-shadow: inset 0 -1px 0 rgba(76,87,93,.28); mix-blend-mode: multiply; pointer-events: none; }
 .pdf-translation-marker { width: 22px; height: 22px; padding: 0; border: 1px solid #986817; border-radius: 50%; color: #523600; background: #ffd66b; box-shadow: 0 2px 7px rgba(33,42,43,.22); font: 700 11px/20px system-ui, sans-serif; cursor: help; transform: translateY(-2px); }
 .pdf-translation-marker:hover, .pdf-translation-marker:focus-visible { border-color: #5b3e0b; background: #ffe496; outline: 2px solid rgba(255,214,107,.45); outline-offset: 2px; }
 .pdf-translation-popover { position: absolute; bottom: calc(100% + 8px); left: 0; width: min(340px, calc(100vw - 48px)); max-height: 220px; overflow: auto; visibility: hidden; opacity: 0; pointer-events: none; transform: translateY(4px); transition: opacity .12s ease, transform .12s ease, visibility .12s; padding: 11px 13px; border: 1px solid #c8b26f; border-radius: 8px; color: #26343a; background: #fffdf4; box-shadow: 0 10px 28px rgba(25,39,44,.24); font: calc(13px * var(--font-scale))/1.62 system-ui, sans-serif; text-align: left; white-space: normal; }
 .pdf-translation-popover::after { content: ''; position: absolute; top: 100%; left: 7px; border: 6px solid transparent; border-top-color: #c8b26f; }
 .pdf-translation-popover strong { display: block; margin-bottom: 5px; color: #80600e; font-size: calc(11px * var(--font-scale)); letter-spacing: .06em; }
+.pdf-translation-popover-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 5px; }
+.pdf-translation-popover-heading strong { margin: 0; }
+.pdf-translation-popover-heading .danger-link { flex: 0 0 auto; padding: 0; font-size: calc(9px * var(--font-scale)); }
 .pdf-translation-popover p { margin: 0; white-space: pre-wrap; }
 .pdf-translation-anchor.align-right .pdf-translation-popover { right: 0; left: auto; }
 .pdf-translation-anchor.align-right .pdf-translation-popover::after { right: 7px; left: auto; }

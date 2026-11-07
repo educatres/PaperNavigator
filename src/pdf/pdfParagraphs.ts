@@ -1,4 +1,4 @@
-import type { PdfDocumentData, PdfHighlightRect } from '../domain/types'
+import type { PdfDocumentData, PdfHighlightRect, PdfParagraphTranslation } from '../domain/types'
 import { openPdf } from './pdfClient'
 
 export interface PdfParagraphSource {
@@ -42,6 +42,14 @@ const normalizeParagraph = (text: string) => text.replace(/(\p{L})-\n(?=\p{Ll})/
 async function textHash(text: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('')
+}
+
+export function pendingPdfParagraphSources(paragraphs: PdfParagraphSource[], translations: PdfParagraphTranslation[]) {
+  const saved = new Map(translations.map((item) => [item.id, item]))
+  return paragraphs.filter((paragraph) => {
+    const existing = saved.get(paragraph.id)
+    return !existing || existing.sourceHash !== paragraph.sourceHash || !existing.translation.trim()
+  })
 }
 
 // Adapted from the reference reader: lines are grouped within page regions and
@@ -119,9 +127,8 @@ export function groupPdfParagraphRuns(runs: PdfTextRun[], pageWidth: number): Pa
       const previous = current?.lines.at(-1)
       const newIndent = line.x - left > fontHeight * .8
       const listStart = /^\s*(?:[•●▪]|\d+[.)]\s|[a-z][.)]\s)/i.test(line.text)
-      const shortEnding = previous && previous.x + previous.width < right - fontHeight * 2 && /[.!?:;]\s*$/.test(previous.text)
       const breakBefore = !previous || line.y - previous.y > Math.max(previous.height, line.height) * 1.65
-        || Math.abs(previous.height - line.height) > fontHeight * .25 || newIndent || listStart || shortEnding
+        || Math.abs(previous.height - line.height) > fontHeight * .25 || newIndent || listStart
         || line.table || previous.table || line.review || previous.review
       if (breakBefore) {
         const excluded = /^[\d\s\-–—]+$/.test(line.text) || /^[\d\s=+×÷<>()[\]{}.,:;^_*\/\\−≤≥∑∫]+$/u.test(line.text)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { groupPdfParagraphRuns, type PdfTextRun } from '../pdf/pdfParagraphs'
+import { groupPdfParagraphRuns, pendingPdfParagraphSources, type PdfParagraphSource, type PdfTextRun } from '../pdf/pdfParagraphs'
+import type { PdfParagraphTranslation } from '../domain/types'
 
 function run(text: string, x: number, y: number, width = 200, itemIndex = 0): PdfTextRun {
   return { text, x, y, width, height: 12, itemIndex }
@@ -21,6 +22,17 @@ describe('PDF paragraph grouping', () => {
     ])
   })
 
+  it('does not split a paragraph merely because an intermediate line ends a sentence', () => {
+    const groups = groupPdfParagraphRuns([
+      run('This sentence ends here.', 50, 100, 150, 0),
+      run('A second sentence remains in the same paragraph.', 50, 114, 280, 1),
+      run('The paragraph continues on this line.', 50, 128, 230, 2),
+    ], 600)
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].lines).toHaveLength(3)
+  })
+
   it('never merges paragraph lines across a repeated two-column gutter', () => {
     const groups = groupPdfParagraphRuns([
       run('Left column first line', 40, 100, 190, 0),
@@ -33,5 +45,16 @@ describe('PDF paragraph grouping', () => {
     expect(groups[0].columnId).not.toBe(groups[1].columnId)
     expect(groups[0].lines.every((line) => line.x < 300)).toBe(true)
     expect(groups[1].lines.every((line) => line.x > 300)).toBe(true)
+  })
+})
+
+describe('PDF paragraph translation continuation', () => {
+  const paragraph = { id: 'p-0', paperId: 'p', pdfPageIndex: 0, order: 0, sourceText: 'Source', sourceHash: 'hash', lines: [], role: 'text' } satisfies PdfParagraphSource
+  const translation = { ...paragraph, translation: '譯文', model: 'model', createdAt: '' } satisfies PdfParagraphTranslation
+
+  it('skips completed matching translations and queues changed or empty ones', () => {
+    expect(pendingPdfParagraphSources([paragraph], [translation])).toEqual([])
+    expect(pendingPdfParagraphSources([{ ...paragraph, sourceHash: 'changed' }], [translation])).toHaveLength(1)
+    expect(pendingPdfParagraphSources([paragraph], [{ ...translation, translation: '' }])).toHaveLength(1)
   })
 })
