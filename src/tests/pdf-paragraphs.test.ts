@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupPdfParagraphRuns, pendingPdfParagraphSources, type PdfParagraphSource, type PdfTextRun } from '../pdf/pdfParagraphs'
+import { groupPdfParagraphRuns, pendingPdfParagraphSources, pendingSelectedTranslations, type PdfParagraphSource, type PdfTextRun } from '../pdf/pdfParagraphs'
 import type { PdfParagraphTranslation } from '../domain/types'
 
 function run(text: string, x: number, y: number, width = 200, itemIndex = 0): PdfTextRun {
@@ -56,5 +56,12 @@ describe('PDF paragraph translation continuation', () => {
     expect(pendingPdfParagraphSources([paragraph], [translation])).toEqual([])
     expect(pendingPdfParagraphSources([{ ...paragraph, sourceHash: 'changed' }], [translation])).toHaveLength(1)
     expect(pendingPdfParagraphSources([paragraph], [{ ...translation, translation: '' }])).toHaveLength(1)
+  })
+
+  it('queues only unfinished manual selections for batch translation', () => {
+    const pendingSelection = { ...translation, id: 'manual-1', origin: 'selection' as const, translation: '' }
+    const completedSelection = { ...translation, id: 'manual-2', origin: 'selection' as const }
+
+    expect(pendingSelectedTranslations([translation, pendingSelection, completedSelection]).map((item) => item.id)).toEqual(['manual-1'])
   })
 })

@@ -7,7 +7,7 @@ import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
 import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, paragraphTranslationPrompt, PASS3_PROMPT_VERSION } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
-import { extractPdfParagraphSources, pendingPdfParagraphSources } from './pdf/pdfParagraphs'
+import { extractPdfParagraphSources, pendingPdfParagraphSources, pendingSelectedTranslations } from './pdf/pdfParagraphs'
 import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
 import { exportPaperMarkdown, exportPass3Html, exportProjectJson, importProjectJson, openFullReportHtml } from './storage/exports'
 import { markdownToHtml, richTextToHtml } from './lib/richText'
@@ -455,7 +455,7 @@ export default function App() {
         const sourceById = new Map(eligible.map((paragraph) => [paragraph.id, paragraph]))
         updatePaper(paperId, (paper) => ({
           ...paper,
-          pdfTranslations: (paper.pdfTranslations ?? []).filter((item) => sourceById.get(item.id)?.sourceHash === item.sourceHash),
+          pdfTranslations: (paper.pdfTranslations ?? []).filter((item) => item.origin === 'selection' || sourceById.get(item.id)?.sourceHash === item.sourceHash),
         }))
         const pending = pendingPdfParagraphSources(eligible, selectedPaper.pdfTranslations ?? [])
         if (!pending.length) {
@@ -481,6 +481,7 @@ export default function App() {
             translation,
             model: `${config.id}:${config.modelId}`,
             createdAt: new Date().toISOString(),
+            origin: 'auto',
           }
           updatePaper(paperId, (paper) => ({
             ...paper,
@@ -494,6 +495,60 @@ export default function App() {
         setMessage(`背景逐段翻譯完成；本次新增 ${completed} 個段落。`)
       } catch (value) {
         if ((value as Error)?.name === 'AbortError') setMessage(translationAbortMessageRef.current ?? `逐段翻譯已停止；本次完成的 ${completed} 個段落已保留，下次會接續處理。`)
+        else reportError(value)
+      } finally {
+        if (translationAbortRef.current === controller) translationAbortRef.current = null
+        translationAbortMessageRef.current = null
+        setTranslationProgress((current) => current?.paperId === paperId ? null : current)
+      }
+    })()
+  }
+
+  const addPdfTranslationSelection = (selection: PdfParagraphTranslation) => {
+    if (!selectedPaper) return
+    updatePaper(selectedPaper.id, (paper) => ({
+      ...paper,
+      pdfTranslations: [...(paper.pdfTranslations ?? []), selection]
+        .sort((left, right) => left.pdfPageIndex - right.pdfPageIndex || left.order - right.order),
+    }))
+    setMessage('已加入一段待翻譯文字；可以繼續圈選其他段落，再一起翻譯。')
+  }
+
+  const translateSelectedParagraphs = () => {
+    if (!selectedPaper) { setError('請先選取論文。'); return }
+    if (!config.apiKey || !config.modelId) { setSettingsOpen(true); setError('請先輸入 API Key、測試連線並選擇模型。'); return }
+    if (translationAbortRef.current) { setMessage('已有逐段翻譯在背景執行；可先按「停止翻譯」。'); return }
+    const pending = pendingSelectedTranslations(selectedPaper.pdfTranslations ?? [])
+    if (!pending.length) { setMessage('目前沒有待翻譯的圈選段落。'); return }
+    const paperId = selectedPaper.id
+    const controller = new AbortController()
+    translationAbortRef.current = controller
+    translationAbortMessageRef.current = null
+    setError('')
+    setMessage(`已在背景開始翻譯 ${pending.length} 個圈選段落；可以繼續閱讀或切換分頁。`)
+    setTranslationProgress({ paperId, phase: 'translating', completed: 0, total: pending.length })
+    void (async () => {
+      let completed = 0
+      try {
+        for (const item of pending) {
+          controller.signal.throwIfAborted()
+          const response = await generateText(config, paragraphTranslationPrompt(item.sourceText), controller.signal)
+          controller.signal.throwIfAborted()
+          const translation = response.text.trim()
+          if (!translation) throw new Error(`第 ${item.pdfPageIndex + 1} 頁的圈選段落沒有取得翻譯。`)
+          updatePaper(paperId, (paper) => ({
+            ...paper,
+            pdfTranslations: (paper.pdfTranslations ?? []).map((current) => current.id === item.id
+              ? { ...current, translation, model: `${config.id}:${config.modelId}` }
+              : current),
+          }))
+          completed += 1
+          setTranslationProgress({ paperId, phase: 'translating', completed, total: pending.length })
+          setLastUsage(response.usage)
+        }
+        setMessage(`圈選段落背景翻譯完成；本次完成 ${completed} 段。`)
+      } catch (value) {
+        if ((value as Error)?.name === 'AbortError') setMessage(translationAbortMessageRef.current ?? `圈選段落翻譯已停止；本次完成的 ${completed} 段已保留，下次可接續。`)
         else reportError(value)
       } finally {
         if (translationAbortRef.current === controller) translationAbortRef.current = null
@@ -633,7 +688,7 @@ export default function App() {
     {headerVisible && <header className="topbar">
       <div className="brand-block">
         <div className="brand-mark">PN</div>
-        <div><strong>PaperNavigator</strong><span>證據導向的 AI 論文閱讀器</span></div>
+        <div><strong>PaperNavigator</strong><span>三遍閱讀法：<b>鳥瞰</b> → <b>理解</b> → <b>重建閱讀筆記</b></span></div>
       </div>
       <div className="top-actions">
         <span className={navigator.onLine ? 'online-state' : 'online-state offline'}>{navigator.onLine ? '● 線上' : '● 離線'}</span>
@@ -722,6 +777,8 @@ export default function App() {
         highlights={selectedPaper?.highlights ?? []}
         translations={selectedPaper?.pdfTranslations ?? []}
         onTranslate={translatePdfParagraphs}
+        onAddTranslationSelection={addPdfTranslationSelection}
+        onTranslateSelections={translateSelectedParagraphs}
         translationRunning={Boolean(translationProgress && translationProgress.paperId === selectedPaper?.id)}
         translationBlocked={Boolean(translationProgress && translationProgress.paperId !== selectedPaper?.id)}
         translationProgressLabel={translationProgress && translationProgress.paperId === selectedPaper?.id ? translationProgressText(translationProgress) : ''}

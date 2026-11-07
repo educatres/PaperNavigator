@@ -52,6 +52,10 @@ export function pendingPdfParagraphSources(paragraphs: PdfParagraphSource[], tra
   })
 }
 
+export function pendingSelectedTranslations(translations: PdfParagraphTranslation[]) {
+  return translations.filter((item) => item.origin === 'selection' && !item.translation.trim())
+}
+
 // Adapted from the reference reader: lines are grouped within page regions and
 // columns so a translation never silently crosses a column or page boundary.
 export function groupPdfParagraphRuns(runs: PdfTextRun[], pageWidth: number): ParagraphGroup[] {

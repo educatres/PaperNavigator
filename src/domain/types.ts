@@ -38,6 +38,7 @@ export interface PdfParagraphTranslation {
   translation: string
   model: string
   createdAt: string
+  origin?: 'auto' | 'selection'
 }
 
 export interface PdfScreenshot {
