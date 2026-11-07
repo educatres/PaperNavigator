@@ -39,6 +39,8 @@ type Zoom = 'fit' | number
 interface FloatingTranslationPosition {
   x: number
   y: number
+  width?: number
+  height?: number
 }
 
 interface TranslationDragState extends FloatingTranslationPosition {
@@ -46,6 +48,15 @@ interface TranslationDragState extends FloatingTranslationPosition {
   pointerId: number
   clientX: number
   clientY: number
+}
+
+interface TranslationResizeState {
+  id: string
+  pointerId: number
+  clientX: number
+  clientY: number
+  width: number
+  height: number
 }
 
 type PdfAreaAnnotation = PdfParagraphTranslation | PdfAreaSummary
@@ -353,6 +364,7 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries,
   const [editingAnnotationId, setEditingAnnotationId] = useState<string | null>(null)
   const [annotationDraft, setAnnotationDraft] = useState('')
   const translationDrag = useRef<TranslationDragState | null>(null)
+  const translationResize = useRef<TranslationResizeState | null>(null)
   const translationAreaStart = useRef<DragPoint | null>(null)
   const [translationAreaSelection, setTranslationAreaSelection] = useState<PdfHighlightRect | null>(null)
   const screenshotStart = useRef<DragPoint | null>(null)
@@ -446,7 +458,7 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries,
     const maxY = Math.max(0, 1 - (card?.height ?? 0) / stage.height)
     const x = Math.max(0, Math.min(maxX, drag.x + (event.clientX - drag.clientX) / stage.width))
     const y = Math.max(0, Math.min(maxY, drag.y + (event.clientY - drag.clientY) / stage.height))
-    setOpenTranslationPositions((current) => ({ ...current, [drag.id]: { x, y } }))
+    setOpenTranslationPositions((current) => ({ ...current, [drag.id]: { ...current[drag.id], x, y } }))
     event.stopPropagation()
     event.preventDefault()
   }
@@ -454,6 +466,36 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries,
   const endTranslationDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     if (translationDrag.current?.pointerId === event.pointerId) translationDrag.current = null
+    event.stopPropagation()
+  }
+
+  const beginTranslationResize = (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
+    if (event.button !== 0) return
+    const card = event.currentTarget.parentElement?.getBoundingClientRect()
+    if (!card) return
+    translationResize.current = { id, pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, width: card.width, height: card.height }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.stopPropagation()
+    event.preventDefault()
+  }
+
+  const moveTranslationResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const resize = translationResize.current
+    const frame = resize ? openTranslationPositions[resize.id] : null
+    const stage = canvasRef.current?.getBoundingClientRect()
+    if (!resize || resize.pointerId !== event.pointerId || !frame || !stage) return
+    const maxWidth = Math.max(260, stage.width * (1 - frame.x) - 2)
+    const maxHeight = Math.max(180, stage.height * (1 - frame.y) - 2)
+    const width = Math.max(260, Math.min(maxWidth, resize.width + event.clientX - resize.clientX))
+    const height = Math.max(180, Math.min(maxHeight, resize.height + event.clientY - resize.clientY))
+    setOpenTranslationPositions((current) => ({ ...current, [resize.id]: { ...current[resize.id], width, height } }))
+    event.stopPropagation()
+    event.preventDefault()
+  }
+
+  const endTranslationResize = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (translationResize.current?.pointerId === event.pointerId) translationResize.current = null
     event.stopPropagation()
   }
 
@@ -698,10 +740,10 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries,
         const editing = editingAnnotationId === annotation.id
         return <div
           key={`${annotation.id}-floating`}
-          className={`pdf-translation-floating${editing ? ' editing' : ''}`}
+          className={`pdf-translation-floating${editing ? ' editing' : ''}${position.width || position.height ? ' resized' : ''}`}
           role="dialog"
           aria-label={output ? (summary ? 'AI 摘要' : '中文翻譯') : `待${summary ? '摘要' : '翻譯'}段落`}
-          style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
+          style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%`, width: position.width ? `${position.width}px` : undefined, height: position.height ? `${position.height}px` : undefined }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <div
@@ -712,7 +754,10 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries,
             onPointerCancel={endTranslationDrag}
           >
             <strong>{output ? (summary ? 'AI 摘要' : '中文翻譯') : `待${summary ? '摘要' : '翻譯'}段落`}</strong>
-            <button className="pdf-translation-floating-close" aria-label={`關閉${summary ? '摘要' : '翻譯'}文字框`} title="關閉" onPointerDown={(event) => event.stopPropagation()} onClick={() => closeTranslation(annotation.id)}>×</button>
+            <div className="pdf-translation-floating-header-actions">
+              <button className="danger-link" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); closeTranslation(annotation.id); summary ? onDeleteSummary(annotation.id) : onDeleteTranslation(annotation.id) }}>清除此段</button>
+              <button className="pdf-translation-floating-close" aria-label={`關閉${summary ? '摘要' : '翻譯'}文字框`} title="關閉" onPointerDown={(event) => event.stopPropagation()} onClick={() => closeTranslation(annotation.id)}>×</button>
+            </div>
           </div>
           {editing
             ? <textarea
@@ -724,11 +769,20 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries,
                 onKeyDown={(event) => { if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && annotationDraft.trim()) saveAnnotationEdit(annotation) }}
               />
             : <p className={output ? '' : 'pending-source'}>{output || annotation.sourceText}</p>}
-          <div className="pdf-translation-floating-actions">
+          {(editing || output) && <div className="pdf-translation-floating-actions">
             {editing
               ? <><button className="text-button" onClick={cancelAnnotationEdit}>取消</button><button className="small-button" disabled={!annotationDraft.trim()} onClick={() => saveAnnotationEdit(annotation)}>儲存</button></>
-              : <>{output && <button className="text-button" onClick={() => beginAnnotationEdit(annotation)}>編輯</button>}<button className="danger-link" onClick={(event) => { event.stopPropagation(); closeTranslation(annotation.id); summary ? onDeleteSummary(annotation.id) : onDeleteTranslation(annotation.id) }}>清除此段</button></>}
-          </div>
+              : <button className="text-button" onClick={() => beginAnnotationEdit(annotation)}>編輯</button>}
+          </div>}
+          <button
+            className="pdf-translation-resize-handle"
+            aria-label={`調整${summary ? '摘要' : '翻譯'}浮動框大小`}
+            title="拖曳調整長寬"
+            onPointerDown={(event) => beginTranslationResize(event, annotation.id)}
+            onPointerMove={moveTranslationResize}
+            onPointerUp={endTranslationResize}
+            onPointerCancel={endTranslationResize}
+          ><span aria-hidden="true">⌟</span></button>
         </div>
       })}
       {translationAreaSelection && <div className="pdf-translation-area-selection" aria-hidden="true" style={{ left: `${translationAreaSelection.x * 100}%`, top: `${translationAreaSelection.y * 100}%`, width: `${translationAreaSelection.width * 100}%`, height: `${translationAreaSelection.height * 100}%` }} />}

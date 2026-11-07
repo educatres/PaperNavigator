@@ -397,19 +397,27 @@ td.emphasized { background: #fff7e5; font-weight: 700; }
 .pdf-translation-marker.summary { border-color: #3f766e; color: #234e48; background: #bfe4dc; }
 .pdf-translation-marker.summary:hover, .pdf-translation-marker.summary:focus-visible { border-color: #285d56; background: #d5eee9; outline-color: rgba(104,181,168,.38); }
 .pdf-translation-marker.pending { border-style: dashed; border-color: #67777c; color: #425359; background: #edf0ef; }
-.pdf-translation-floating { position: absolute; z-index: 10; display: flex; width: min(340px, calc(100% - 16px)); max-height: 250px; flex-direction: column; gap: 8px; padding: 10px 12px 11px; border: 1px solid #c8b26f; border-radius: 8px; color: #26343a; background: #fffdf4; box-shadow: 0 10px 28px rgba(25,39,44,.24); font: calc(13px * var(--font-scale))/1.62 system-ui, sans-serif; text-align: left; white-space: normal; }
+.pdf-translation-floating { position: absolute; z-index: 10; display: flex; box-sizing: border-box; width: min(340px, calc(100% - 16px)); min-width: 260px; min-height: 150px; max-width: calc(100% - 4px); max-height: 250px; flex-direction: column; gap: 8px; overflow: hidden; padding: 10px 12px 17px; border: 1px solid #c8b26f; border-radius: 8px; color: #26343a; background: #fffdf4; box-shadow: 0 10px 28px rgba(25,39,44,.24); font: calc(13px * var(--font-scale))/1.62 system-ui, sans-serif; text-align: left; white-space: normal; }
 .pdf-translation-floating-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -3px -4px 0; padding: 3px 4px; color: #80600e; cursor: move; touch-action: none; user-select: none; }
 .pdf-translation-floating-header strong { font-size: calc(11px * var(--font-scale)); letter-spacing: .06em; }
+.pdf-translation-floating-header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.pdf-translation-floating-header-actions .danger-link { padding: 0; font-size: calc(9px * var(--font-scale)); }
 .pdf-translation-floating-close { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; padding: 0; border: 0; border-radius: 50%; color: #625b49; background: transparent; font: 700 20px/1 system-ui, sans-serif; cursor: pointer; }
 .pdf-translation-floating-close:hover, .pdf-translation-floating-close:focus-visible { color: #8a291f; background: #f3e6dc; outline: none; }
-.pdf-translation-floating p { max-height: 160px; margin: 0; overflow: auto; white-space: pre-wrap; }
+.pdf-translation-floating p { min-height: 0; max-height: 160px; flex: 1; margin: 0; overflow: auto; white-space: pre-wrap; }
 .pdf-translation-floating .pending-source { color: #5f6d71; font-style: italic; }
 .pdf-translation-floating.editing { max-height: 340px; }
-.pdf-translation-editor { box-sizing: border-box; width: 100%; min-height: 130px; max-height: 230px; resize: vertical; padding: 8px 9px; border: 1px solid #a8aaa2; border-radius: 5px; color: #26343a; background: #fff; font: inherit; line-height: 1.55; }
+.pdf-translation-floating.resized { max-height: calc(100% - 4px); }
+.pdf-translation-floating.resized p { max-height: none; }
+.pdf-translation-editor { box-sizing: border-box; width: 100%; min-height: 130px; max-height: 230px; flex: 1; resize: vertical; padding: 8px 9px; border: 1px solid #a8aaa2; border-radius: 5px; color: #26343a; background: #fff; font: inherit; line-height: 1.55; }
+.pdf-translation-floating.resized .pdf-translation-editor { min-height: 0; max-height: none; resize: none; }
 .pdf-translation-editor:focus { border-color: #7d671f; outline: 2px solid rgba(200,178,111,.28); outline-offset: 1px; }
 .pdf-translation-floating-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
 .pdf-translation-floating-actions .text-button, .pdf-translation-floating-actions .danger-link { padding: 0; font-size: calc(9px * var(--font-scale)); }
 .pdf-translation-floating-actions .small-button { padding: 4px 9px; }
+.pdf-translation-resize-handle { position: absolute; right: 2px; bottom: 2px; width: 24px; height: 24px; padding: 0; border: 0; color: #77632b; background: linear-gradient(135deg, transparent 0 48%, rgba(128,96,14,.25) 49% 55%, transparent 56% 65%, rgba(128,96,14,.55) 66% 72%, transparent 73%); cursor: nwse-resize; touch-action: none; }
+.pdf-translation-resize-handle:hover, .pdf-translation-resize-handle:focus-visible { background-color: rgba(200,178,111,.2); outline: 1px solid rgba(128,96,14,.42); outline-offset: -2px; }
+.pdf-translation-resize-handle span { position: absolute; right: 3px; bottom: 1px; font: 700 12px/1 system-ui, sans-serif; }
 .pdf-translation-area-selection { position: absolute; z-index: 9; box-sizing: border-box; border: 2px solid #6c797d; border-radius: 3px; background: transparent; box-shadow: 0 0 0 1px rgba(255,255,255,.65), 0 2px 8px rgba(31,44,48,.18); pointer-events: none; }
 .pdf-screenshot-selection { position: absolute; z-index: 9; border: 2px solid #d66848; background: rgba(214,104,72,.14); box-shadow: 0 0 0 9999px rgba(19,35,41,.18); pointer-events: none; }
 .pdf-annotation-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border-top: 1px solid #bbb8b1; background: #fff8d9; }
