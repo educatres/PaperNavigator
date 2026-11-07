@@ -7,7 +7,7 @@ import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
 import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, paragraphTranslationPrompt, PASS3_PROMPT_VERSION } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
-import { extractPdfParagraphSources, pendingPdfParagraphSources, pendingSelectedTranslations } from './pdf/pdfParagraphs'
+import { pendingSelectedTranslations } from './pdf/pdfParagraphs'
 import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
 import { exportPaperMarkdown, exportPass3Html, exportProjectJson, importProjectJson, openFullReportHtml } from './storage/exports'
 import { markdownToHtml, richTextToHtml } from './lib/richText'
@@ -17,7 +17,6 @@ type TabId = 'overview' | 'pass1' | 'pass2' | 'pass3' | 'notes' | 'screenshots'
 
 interface TranslationProgress {
   paperId: string
-  phase: 'extracting' | 'translating'
   completed: number
   total: number
 }
@@ -57,9 +56,7 @@ function usageText(usage: AnalysisUsage | null) {
 }
 
 function translationProgressText(progress: TranslationProgress) {
-  return progress.phase === 'extracting'
-    ? `背景翻譯：擷取第 ${progress.completed} / ${progress.total} 頁`
-    : `背景翻譯：${progress.completed} / ${progress.total} 個段落`
+  return `背景翻譯：${progress.completed} / ${progress.total} 個圈選段落`
 }
 
 function formatElapsed(seconds: number) {
@@ -432,78 +429,6 @@ export default function App() {
     }, false, '選取的文字')
   }
 
-  const translatePdfParagraphs = () => {
-    if (!selectedPaper || !selectedDocument) { setError('請先選取並附上 PDF。'); return }
-    if (!config.apiKey || !config.modelId) { setSettingsOpen(true); setError('請先輸入 API Key、測試連線並選擇模型。'); return }
-    if (translationAbortRef.current) { setMessage('已有逐段翻譯在背景執行；可先按「停止翻譯」。'); return }
-    const paperId = selectedPaper.id
-    const pdfDocument = selectedDocument
-    const controller = new AbortController()
-    translationAbortRef.current = controller
-    translationAbortMessageRef.current = null
-    setError('')
-    setMessage('逐段翻譯已在背景開始；你可以繼續閱讀或切換分頁。')
-    setTranslationProgress({ paperId, phase: 'extracting', completed: 0, total: pdfDocument.pageCount })
-    void (async () => {
-      let completed = 0
-      try {
-        const paragraphs = await extractPdfParagraphSources(pdfDocument, paperId, controller.signal, (page, total) => {
-          setTranslationProgress({ paperId, phase: 'extracting', completed: page, total })
-        })
-        const eligible = paragraphs.filter((paragraph) => paragraph.role !== 'excluded' && paragraph.role !== 'review' && paragraph.sourceText.length >= 2)
-        if (!eligible.length) throw new Error('這份 PDF 沒有可翻譯的文字段落。')
-        const sourceById = new Map(eligible.map((paragraph) => [paragraph.id, paragraph]))
-        updatePaper(paperId, (paper) => ({
-          ...paper,
-          pdfTranslations: (paper.pdfTranslations ?? []).filter((item) => item.origin === 'selection' || sourceById.get(item.id)?.sourceHash === item.sourceHash),
-        }))
-        const pending = pendingPdfParagraphSources(eligible, selectedPaper.pdfTranslations ?? [])
-        if (!pending.length) {
-          setMessage(`已完成 ${eligible.length} 個段落的翻譯，沒有需要更新的內容。`)
-          return
-        }
-        setTranslationProgress({ paperId, phase: 'translating', completed: 0, total: pending.length })
-
-        for (const paragraph of pending) {
-          controller.signal.throwIfAborted()
-          const response = await generateText(config, paragraphTranslationPrompt(paragraph.sourceText), controller.signal)
-          controller.signal.throwIfAborted()
-          const translation = response.text.trim()
-          if (!translation) throw new Error(`第 ${paragraph.pdfPageIndex + 1} 頁的段落沒有取得翻譯。`)
-          const record: PdfParagraphTranslation = {
-            id: paragraph.id,
-            paperId,
-            pdfPageIndex: paragraph.pdfPageIndex,
-            order: paragraph.order,
-            sourceText: paragraph.sourceText,
-            sourceHash: paragraph.sourceHash,
-            lines: paragraph.lines,
-            translation,
-            model: `${config.id}:${config.modelId}`,
-            createdAt: new Date().toISOString(),
-            origin: 'auto',
-          }
-          updatePaper(paperId, (paper) => ({
-            ...paper,
-            pdfTranslations: [...(paper.pdfTranslations ?? []).filter((item) => item.id !== record.id), record]
-              .sort((left, right) => left.pdfPageIndex - right.pdfPageIndex || left.order - right.order),
-          }))
-          completed += 1
-          setTranslationProgress({ paperId, phase: 'translating', completed, total: pending.length })
-          setLastUsage(response.usage)
-        }
-        setMessage(`背景逐段翻譯完成；本次新增 ${completed} 個段落。`)
-      } catch (value) {
-        if ((value as Error)?.name === 'AbortError') setMessage(translationAbortMessageRef.current ?? `逐段翻譯已停止；本次完成的 ${completed} 個段落已保留，下次會接續處理。`)
-        else reportError(value)
-      } finally {
-        if (translationAbortRef.current === controller) translationAbortRef.current = null
-        translationAbortMessageRef.current = null
-        setTranslationProgress((current) => current?.paperId === paperId ? null : current)
-      }
-    })()
-  }
-
   const addPdfTranslationSelection = (selection: PdfParagraphTranslation) => {
     if (!selectedPaper) return
     updatePaper(selectedPaper.id, (paper) => ({
@@ -517,7 +442,7 @@ export default function App() {
   const translateSelectedParagraphs = () => {
     if (!selectedPaper) { setError('請先選取論文。'); return }
     if (!config.apiKey || !config.modelId) { setSettingsOpen(true); setError('請先輸入 API Key、測試連線並選擇模型。'); return }
-    if (translationAbortRef.current) { setMessage('已有逐段翻譯在背景執行；可先按「停止翻譯」。'); return }
+    if (translationAbortRef.current) { setMessage('已有圈選翻譯在背景執行；可先按「停止翻譯」。'); return }
     const pending = pendingSelectedTranslations(selectedPaper.pdfTranslations ?? [])
     if (!pending.length) { setMessage('目前沒有待翻譯的圈選段落。'); return }
     const paperId = selectedPaper.id
@@ -526,7 +451,7 @@ export default function App() {
     translationAbortMessageRef.current = null
     setError('')
     setMessage(`已在背景開始翻譯 ${pending.length} 個圈選段落；可以繼續閱讀或切換分頁。`)
-    setTranslationProgress({ paperId, phase: 'translating', completed: 0, total: pending.length })
+    setTranslationProgress({ paperId, completed: 0, total: pending.length })
     void (async () => {
       let completed = 0
       try {
@@ -543,7 +468,7 @@ export default function App() {
               : current),
           }))
           completed += 1
-          setTranslationProgress({ paperId, phase: 'translating', completed, total: pending.length })
+          setTranslationProgress({ paperId, completed, total: pending.length })
           setLastUsage(response.usage)
         }
         setMessage(`圈選段落背景翻譯完成；本次完成 ${completed} 段。`)
@@ -569,14 +494,16 @@ export default function App() {
   }
 
   const clearPdfTranslations = () => {
-    if (!selectedPaper || !(selectedPaper.pdfTranslations ?? []).length) return
-    if (!window.confirm(`清除這篇論文的全部 ${(selectedPaper.pdfTranslations ?? []).length} 個逐段翻譯？`)) return
+    if (!selectedPaper) return
+    const selectedTranslations = (selectedPaper.pdfTranslations ?? []).filter((item) => item.origin === 'selection')
+    if (!selectedTranslations.length) return
+    if (!window.confirm(`清除這篇論文的全部 ${selectedTranslations.length} 個圈選翻譯？`)) return
     if (translationProgress?.paperId === selectedPaper.id) {
-      translationAbortMessageRef.current = '背景翻譯已停止，並已清除全部逐段翻譯註釋。'
+      translationAbortMessageRef.current = '背景翻譯已停止，並已清除全部圈選翻譯註釋。'
       translationAbortRef.current?.abort()
     }
-    updatePaper(selectedPaper.id, (paper) => ({ ...paper, pdfTranslations: [] }))
-    setMessage('已清除全部逐段翻譯註釋。')
+    updatePaper(selectedPaper.id, (paper) => ({ ...paper, pdfTranslations: (paper.pdfTranslations ?? []).filter((item) => item.origin !== 'selection') }))
+    setMessage('已清除全部圈選翻譯註釋。')
   }
 
   const updateHighlightColor = (highlightId: string, color: PdfHighlight['color']) => {
@@ -715,7 +642,7 @@ export default function App() {
         <label>模型<select value={config.modelId} disabled={!models.length} onChange={(event) => { setConfig((current) => ({ ...current, modelId: event.target.value })); setConnectionState('idle') }}><option value="">請先讀取模型清單</option>{models.map((model) => <option key={model.id} value={model.id}>{model.id}</option>)}</select></label>
       </div>
       <div className="settings-footer">
-        <p><strong>本機保存：</strong>Provider、Base URL、模型與 API Key 會保留在此瀏覽器；PDF 原檔、分析、螢光標記與逐段翻譯保存在 IndexedDB。資料不會寫入 repository，共用電腦請使用紅色「清除設定」及專案清除功能。</p>
+        <p><strong>本機保存：</strong>Provider、Base URL、模型與 API Key 會保留在此瀏覽器；PDF 原檔、分析、螢光標記與圈選翻譯保存在 IndexedDB。資料不會寫入 repository，共用電腦請使用紅色「清除設定」及專案清除功能。</p>
         <div className="settings-actions">
           <button className="secondary-button" disabled={!config.apiKey || connectionState === 'testing'} onClick={() => void loadModelList()}>讀取模型清單</button>
           <button className="secondary-button" disabled={!config.apiKey || !config.modelId || connectionState === 'testing'} onClick={() => void testConnection()}>{connectionState === 'ready' ? '✓ 重新測試連線' : '測試連線'}</button>
@@ -775,8 +702,7 @@ export default function App() {
         paperId={selectedPaper?.id ?? ''}
         pageIndex={pageIndex}
         highlights={selectedPaper?.highlights ?? []}
-        translations={selectedPaper?.pdfTranslations ?? []}
-        onTranslate={translatePdfParagraphs}
+        translations={(selectedPaper?.pdfTranslations ?? []).filter((item) => item.origin === 'selection')}
         onAddTranslationSelection={addPdfTranslationSelection}
         onTranslateSelections={translateSelectedParagraphs}
         translationRunning={Boolean(translationProgress && translationProgress.paperId === selectedPaper?.id)}

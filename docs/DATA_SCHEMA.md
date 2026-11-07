@@ -8,7 +8,7 @@ Schema version：`1.0`。
 
 - `Paper`：檔案 hash、書目 metadata、各閱讀階段、observations、evidence、舊版 table analyses、citations、浮動純文字筆記 `floatingNote`、PDF highlights、`screenshots` 與 `pdfTranslations`。舊版 `notes`、`aiRegionSummaries` 僅保留資料相容性，其中圈選摘要不再於介面使用。
 - `PdfHighlight`：paper／頁碼、0–1 正規化矩形座標、顏色、可選取文字、AI 摘要、翻譯與建立時間；同次選取只保存第一個版面區塊，舊資料仍可讀取 `rects`。
-- `PdfParagraphTranslation`：paper／頁碼／段落順序、來源文字與來源識別、0–1 正規化行座標、繁體中文譯文、模型、建立時間與可選的 `origin`（`auto`／`selection`）。自動段落以來源 hash 判斷是否沿用；手動圈選可先以空譯文保存為待翻譯註釋。
+- `PdfParagraphTranslation`：paper／頁碼／段落順序、來源文字與來源識別、0–1 正規化來源區域座標（沿用 `lines` 欄位以相容舊資料）、繁體中文譯文、模型、建立時間與可選的 `origin`（`auto`／`selection`）。目前介面只新增及顯示 `selection` 區域圈選翻譯，可先以空譯文保存為待翻譯註釋；`auto` 僅保留舊專案資料相容性。
 - `PdfScreenshot`：paper／頁碼、0–1 正規化圈選矩形、WebP／PNG data URL 與建立時間；截圖只包含 PDF canvas，不包含螢光標記或翻譯浮窗。
 - `SourceEvidence`：`paperId`、0-based `pdfPageIndex`、1-based `pdfPageDisplay`、印刷頁、section、object type／label、短摘錄、核對狀態與備註。
 - `MetricObservation`：方法來源、task、dataset／version、split、metric definition／direction、raw value、numeric value、unit、pretraining、hardware、protocol 與 evidence IDs。

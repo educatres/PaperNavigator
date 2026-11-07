@@ -32,7 +32,7 @@ UI 不直接組 API payload；`src/ai/orchestrator` 選擇 prompt 與 schema，�
 4. Pass 3 只在 Pass 2 後執行；輸出重建狀態、假設、威脅與可驗證研究題目。
 5. PDF 檢視器連續渲染所有頁面，捲動時更新目前頁碼；同次文字選取只保存一筆螢光記錄與第一個版面區塊。
 6. 第三遍只使用第一遍、第二遍、浮動純文字筆記與螢光重點，不重新傳送 PDF 全文；使用者可隨筆記或標記更新再次執行。
-7. PDF Viewer 支援自動逐段與手動圈選兩種翻譯來源。自動模式由 PDF.js 依頁面、欄位、縮排與行距重建段落，不以句號切段；手動模式把每次跨行文字選取保存成單一段落，允許累積多段後批次送出。兩者都由同一個可取消背景工作逐筆傳送，每筆譯文與正規化行座標會立即保存；取消後接續未完成段落。hover 浮窗固定顯示在原文上方，並以淡灰色標示對應原文；單筆或全部譯文皆可清除。
+7. PDF Viewer 的一般瀏覽模式保留原生文字選取以便複製；圈選翻譯改用灰色空心矩形，不觸發逐字選取。每次矩形區域依 PDF 文字層的版面順序擷取成單一段落，允許累積多段後由可取消的背景工作逐筆送出；每筆譯文與正規化區域座標會立即保存，取消後可接續未完成段落。移入或點擊區域左上方的「文」會開啟可拖曳、持續顯示至使用者按 X 關閉的譯文框；只有游標停在「文」上時，來源區域才會顯示灰色空心框。單筆或全部圈選譯文皆可清除。
 8. 圈選截圖只裁切目前已渲染的 PDF canvas，不經 AI；以 WebP（不支援時 PNG）data URL 與正規化來源座標保存，並可隨專案備份及完整報告移動。
 9. 比較工作台只使用已保存的 observations；篩選不觸發 AI。
 
@@ -42,4 +42,4 @@ Google 模式保留 PDF 的視覺、版面與圖表資訊，使用原生 `genera
 
 ## 快取與檔案生命週期
 
-`ProjectBundle` 保存分析、正規化頁面座標的螢光標記、截圖與逐段翻譯，不內嵌 `File`、PDF bytes 或 API Key。PDF 原檔另存於 IndexedDB `pdfs` object store，重新載入時以 paper ID 自動恢復；若網站資料被清除，仍可用 SHA-256 相符的原檔重新綁定。API Key 與 Provider、Base URL、模型則保存在 localStorage，與 ProjectBundle、匯出及 repository 隔離。
+`ProjectBundle` 保存分析、正規化頁面座標的螢光標記、截圖與圈選翻譯，不內嵌 `File`、PDF bytes 或 API Key。PDF 原檔另存於 IndexedDB `pdfs` object store，重新載入時以 paper ID 自動恢復；若網站資料被清除，仍可用 SHA-256 相符的原檔重新綁定。API Key 與 Provider、Base URL、模型則保存在 localStorage，與 ProjectBundle、匯出及 repository 隔離。

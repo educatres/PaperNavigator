@@ -10,7 +10,6 @@ interface Props {
   pageIndex: number
   highlights: PdfHighlight[]
   translations: PdfParagraphTranslation[]
-  onTranslate: () => void
   onAddTranslationSelection: (translation: PdfParagraphTranslation) => void
   onTranslateSelections: () => void
   translationRunning: boolean
@@ -29,6 +28,18 @@ interface Props {
 type PdfTool = 'browse' | 'pan' | 'highlight' | 'translate-select' | 'erase' | 'screenshot'
 type Zoom = 'fit' | number
 
+interface FloatingTranslationPosition {
+  x: number
+  y: number
+}
+
+interface TranslationDragState extends FloatingTranslationPosition {
+  id: string
+  pointerId: number
+  clientX: number
+  clientY: number
+}
+
 const highlightColors: Record<PdfHighlightColor, string> = {
   yellow: 'rgba(246, 211, 73, .46)',
   green: 'rgba(87, 190, 137, .42)',
@@ -38,6 +49,15 @@ const highlightColors: Record<PdfHighlightColor, string> = {
 
 const colorLabels: Record<PdfHighlightColor, string> = { yellow: '黃', green: '綠', pink: '粉紅', blue: '淺藍' }
 const pageRects = (highlight: PdfHighlight): PdfHighlightRect[] => highlight.rects?.length ? highlight.rects : [{ x: highlight.x, y: highlight.y, width: highlight.width, height: highlight.height }]
+
+function boundingRect(rects: PdfHighlightRect[]) {
+  if (!rects.length) return null
+  const left = Math.min(...rects.map((rect) => rect.x))
+  const top = Math.min(...rects.map((rect) => rect.y))
+  const right = Math.max(...rects.map((rect) => rect.x + rect.width))
+  const bottom = Math.max(...rects.map((rect) => rect.y + rect.height))
+  return { x: left, y: top, width: right - left, height: bottom - top }
+}
 
 interface TextSpanInfo {
   span: HTMLSpanElement
@@ -122,7 +142,7 @@ function selectionElement(node: Node | null) {
   return element?.closest('span') ?? element
 }
 
-export function PdfViewer({ document, paperId, pageIndex, highlights, translations, onTranslate, onAddTranslationSelection, onTranslateSelections, translationRunning, translationBlocked, translationProgressLabel, onCancelTranslation, onDeleteTranslation, onClearTranslations, onCollapse, onPageChange, onAddHighlight, onDeleteHighlight, onAddScreenshot }: Props) {
+export function PdfViewer({ document, paperId, pageIndex, highlights, translations, onAddTranslationSelection, onTranslateSelections, translationRunning, translationBlocked, translationProgressLabel, onCancelTranslation, onDeleteTranslation, onClearTranslations, onCollapse, onPageChange, onAddHighlight, onDeleteHighlight, onAddScreenshot }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const pageNodes = useRef<Record<number, HTMLDivElement | null>>({})
   const visiblePage = useRef(pageIndex)
@@ -216,7 +236,6 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
   const zoomLabel = zoom === 'fit' ? '同寬' : `${Math.round(zoom * 100)}%`
   const pendingSelectionCount = translations.filter((item) => item.origin === 'selection' && !item.translation.trim()).length
   const completedTranslationCount = translations.filter((item) => item.translation.trim()).length
-  const automaticTranslationCount = translations.filter((item) => item.origin !== 'selection').length
 
   return <aside className="pdf-panel" aria-label="PDF 原文檢視器">
     <div className="pdf-toolbar">
@@ -231,15 +250,13 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
         <button className={zoom === 1 ? 'small-button active' : 'small-button'} onClick={() => setZoom(1)}>100%</button>
         <button className={tool === 'pan' ? 'small-button active' : 'small-button'} onClick={() => switchTool('pan')} aria-pressed={tool === 'pan'} title="按住滑鼠左鍵拖曳來移動 PDF"><span className="tool-icon" aria-hidden="true">✋</span>手掌</button>
         <button className={tool === 'highlight' ? 'small-button active' : 'small-button'} onClick={() => switchTool('highlight')} aria-pressed={tool === 'highlight'} title="選取 PDF 文字並建立螢光標記"><span className="tool-icon" aria-hidden="true">🖍</span>螢光筆</button>
-        <button className={tool === 'translate-select' ? 'small-button active' : 'small-button'} onClick={() => switchTool('translate-select')} aria-pressed={tool === 'translate-select'} title="選取一整段 PDF 文字，加入待翻譯清單"><span className="tool-icon" aria-hidden="true">文</span>圈選翻譯</button>
+        <button className={tool === 'translate-select' ? 'small-button active' : 'small-button'} onClick={() => switchTool('translate-select')} aria-pressed={tool === 'translate-select'} title="拖曳灰色矩形框住 PDF 文字，加入待翻譯清單"><span className="tool-icon" aria-hidden="true">文</span>圈選翻譯</button>
         <div className="highlight-toolbar-palette" aria-label="螢光筆顏色">{(Object.keys(highlightColors) as PdfHighlightColor[]).map((item) => <button key={item} aria-label={`${colorLabels[item]}色螢光筆`} title={`${colorLabels[item]}色`} className={color === item ? 'active' : ''} style={{ background: highlightColors[item] }} onClick={() => setColor(item)} />)}</div>
         <button className={tool === 'erase' ? 'small-button active' : 'small-button'} onClick={() => switchTool('erase')} aria-pressed={tool === 'erase'} title="點選頁面上的螢光標記即可刪除"><span className="tool-icon" aria-hidden="true">⌫</span>刪除標記</button>
         <button className={tool === 'screenshot' ? 'small-button active' : 'small-button'} onClick={() => switchTool('screenshot')} aria-pressed={tool === 'screenshot'} title="在 PDF 頁面拖曳範圍並保存截圖"><span className="tool-icon" aria-hidden="true">▣</span>圈選截圖</button>
-        {translationRunning
-          ? <button className="small-button translation-cancel-button" onClick={onCancelTranslation} title="停止背景逐段翻譯；已完成的譯文會保留"><span className="tool-icon" aria-hidden="true">■</span>停止翻譯</button>
-          : <button className="small-button pdf-translate-button" disabled={translationBlocked} onClick={onTranslate} title={translationBlocked ? '另一篇論文正在背景翻譯' : '擷取 PDF 段落並在背景逐段翻譯成繁體中文'}><span className="tool-icon" aria-hidden="true">文</span>{automaticTranslationCount ? '接續翻譯' : '逐段翻譯'}</button>}
+        {translationRunning && <button className="small-button translation-cancel-button" onClick={onCancelTranslation} title="停止背景圈選翻譯；已完成的譯文會保留"><span className="tool-icon" aria-hidden="true">■</span>停止翻譯</button>}
         <button className="small-button selection-translate-button" disabled={translationRunning || translationBlocked || !pendingSelectionCount} onClick={onTranslateSelections} title="把目前圈選的待翻譯段落一起送到背景翻譯">翻譯已選段落（{pendingSelectionCount}）</button>
-        <button className="small-button" disabled={!translations.length} onClick={onClearTranslations} title="清除這篇論文的全部逐段翻譯">清除全部翻譯</button>
+        <button className="small-button" disabled={!translations.length} onClick={onClearTranslations} title="清除這篇論文的全部圈選翻譯">清除圈選翻譯</button>
         <button className="small-button pdf-collapse-button" onClick={onCollapse} aria-label="收合 PDF Viewer" title="收合 PDF Viewer"><span aria-hidden="true">»</span>收合</button>
       </div>
     </div>
@@ -276,7 +293,7 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
     </div>
     {tool === 'erase' && <div className="pdf-annotation-actions erase-hint"><p>點選頁面上的螢光標記即可刪除，不會影響分析或筆記。</p></div>}
     {tool === 'screenshot' && <div className="pdf-annotation-actions screenshot-hint"><p>在單一 PDF 頁面按住滑鼠左鍵拖曳；放開後，圈選區域會保存到「截圖」分頁。</p></div>}
-    {tool === 'translate-select' && <div className="pdf-annotation-actions translation-selection-hint"><p>拖曳選取一整段文字，可連續標記多段；完成後按「翻譯已選段落」一起在背景翻譯。</p><strong>待翻譯 {pendingSelectionCount} 段</strong></div>}
+    {tool === 'translate-select' && <div className="pdf-annotation-actions translation-selection-hint"><p>拖曳灰色空心框圈住文字區域，可連續標記多段；完成後按「翻譯已選段落」一起在背景翻譯。</p><strong>待翻譯 {pendingSelectionCount} 段</strong></div>}
   </aside>
 }
 
@@ -302,6 +319,10 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
   const textLayerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState('')
   const [activeTranslationId, setActiveTranslationId] = useState<string | null>(null)
+  const [openTranslationPositions, setOpenTranslationPositions] = useState<Record<string, FloatingTranslationPosition>>({})
+  const translationDrag = useRef<TranslationDragState | null>(null)
+  const translationAreaStart = useRef<DragPoint | null>(null)
+  const [translationAreaSelection, setTranslationAreaSelection] = useState<PdfHighlightRect | null>(null)
   const screenshotStart = useRef<DragPoint | null>(null)
   const [screenshotSelection, setScreenshotSelection] = useState<PdfHighlightRect | null>(null)
 
@@ -316,8 +337,67 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
     return () => { active = false; controller.abort() }
   }, [pdf, pageIndex, viewportWidth, zoom])
 
+  useEffect(() => {
+    const available = new Set(translations.map((translation) => translation.id))
+    setOpenTranslationPositions((current) => {
+      const next = Object.fromEntries(Object.entries(current).filter(([id]) => available.has(id)))
+      return Object.keys(next).length === Object.keys(current).length ? current : next
+    })
+  }, [translations])
+
+  const openTranslation = (translation: PdfParagraphTranslation) => {
+    const anchor = translation.lines[0]
+    if (!anchor) return
+    setOpenTranslationPositions((current) => {
+      if (current[translation.id]) return current
+      const boxWidth = canvasRef.current ? Math.min(.52, 340 / canvasRef.current.getBoundingClientRect().width) : .52
+      const x = Math.max(.008, Math.min(1 - boxWidth - .008, anchor.x > .55 ? anchor.x - boxWidth : anchor.x))
+      const y = Math.max(.008, Math.min(.72, anchor.y - .22))
+      return { ...current, [translation.id]: { x, y } }
+    })
+  }
+
+  const closeTranslation = (id: string) => {
+    setOpenTranslationPositions((current) => {
+      if (!current[id]) return current
+      const next = { ...current }
+      delete next[id]
+      return next
+    })
+  }
+
+  const beginTranslationDrag = (event: React.PointerEvent<HTMLDivElement>, id: string) => {
+    if (event.button !== 0) return
+    const position = openTranslationPositions[id]
+    if (!position) return
+    translationDrag.current = { id, pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, ...position }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.stopPropagation()
+    event.preventDefault()
+  }
+
+  const moveTranslationDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const drag = translationDrag.current
+    const stage = canvasRef.current?.getBoundingClientRect()
+    if (!drag || drag.pointerId !== event.pointerId || !stage) return
+    const card = event.currentTarget.parentElement?.getBoundingClientRect()
+    const maxX = Math.max(0, 1 - (card?.width ?? 0) / stage.width)
+    const maxY = Math.max(0, 1 - (card?.height ?? 0) / stage.height)
+    const x = Math.max(0, Math.min(maxX, drag.x + (event.clientX - drag.clientX) / stage.width))
+    const y = Math.max(0, Math.min(maxY, drag.y + (event.clientY - drag.clientY) / stage.height))
+    setOpenTranslationPositions((current) => ({ ...current, [drag.id]: { x, y } }))
+    event.stopPropagation()
+    event.preventDefault()
+  }
+
+  const endTranslationDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (translationDrag.current?.pointerId === event.pointerId) translationDrag.current = null
+    event.stopPropagation()
+  }
+
   const handleTextSelection = () => {
-    if ((tool !== 'highlight' && tool !== 'translate-select') || !textLayerRef.current || !canvasRef.current) return
+    if (tool !== 'highlight' || !textLayerRef.current || !canvasRef.current) return
     const current = window.getSelection()
     if (!current || current.isCollapsed || current.rangeCount === 0) return
     const range = current.getRangeAt(0)
@@ -372,19 +452,91 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
       }))
     if (!rects.length || !text) return
     const first = rects[0]
-    // One text selection is one saved annotation. Keep every visual block in
-    // the same record so a wrapped or multi-line selection is highlighted and
-    // translated as one complete segment.
-    if (tool === 'highlight') {
-      onAddHighlight({ id: crypto.randomUUID(), paperId, pdfPageIndex: pageIndex, ...first, rects, color, text, createdAt: new Date().toISOString() })
-    } else {
-      const id = crypto.randomUUID()
-      onAddTranslationSelection({
-        id, paperId, pdfPageIndex: pageIndex, order: Date.now(), sourceText: text,
-        sourceHash: `selection:${id}`, lines: rects, translation: '', model: '', createdAt: new Date().toISOString(), origin: 'selection',
-      })
-    }
+    onAddHighlight({ id: crypto.randomUUID(), paperId, pdfPageIndex: pageIndex, ...first, rects, color, text, createdAt: new Date().toISOString() })
     current.removeAllRanges()
+  }
+
+  const textFromTranslationArea = (selection: PdfHighlightRect, stage: DOMRect) => {
+    if (!textLayerRef.current) return ''
+    const left = stage.left + selection.x * stage.width
+    const top = stage.top + selection.y * stage.height
+    const right = left + selection.width * stage.width
+    const bottom = top + selection.height * stage.height
+    const selected = textSpanInfos(textLayerRef.current).flatMap((item) => {
+      const content = item.span.textContent ?? ''
+      const overlapLeft = Math.max(left, item.rect.left)
+      const overlapRight = Math.min(right, item.rect.right)
+      const overlapTop = Math.max(top, item.rect.top)
+      const overlapBottom = Math.min(bottom, item.rect.bottom)
+      if (!content.trim() || overlapRight <= overlapLeft || overlapBottom <= overlapTop) return []
+      if ((overlapBottom - overlapTop) / item.rect.height < .25) return []
+      const startRatio = Math.max(0, Math.min(1, (overlapLeft - item.rect.left) / item.rect.width))
+      const endRatio = Math.max(0, Math.min(1, (overlapRight - item.rect.left) / item.rect.width))
+      const start = Math.max(0, Math.min(content.length, Math.floor(startRatio * content.length)))
+      const end = Math.max(start + 1, Math.min(content.length, Math.ceil(endRatio * content.length)))
+      const text = content.slice(start, end)
+      return text.trim() ? [{ ...item, text }] : []
+    }).sort((leftItem, rightItem) => leftItem.rect.top - rightItem.rect.top || leftItem.rect.left - rightItem.rect.left)
+
+    const lines: typeof selected[] = []
+    for (const item of selected) {
+      const line = lines[lines.length - 1]
+      const tolerance = Math.max(3, item.rect.height * .55)
+      if (!line || Math.abs(item.rect.top - line[0].rect.top) > tolerance) lines.push([item])
+      else line.push(item)
+    }
+    return lines
+      .map((line) => line.sort((leftItem, rightItem) => leftItem.rect.left - rightItem.rect.left).map((item) => item.text).join(' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+  }
+
+  const beginTranslationArea = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (tool !== 'translate-select' || event.button !== 0) return
+    const target = event.target instanceof Element ? event.target : null
+    if (target?.closest('.pdf-translation-anchor, .pdf-translation-floating')) return
+    const { point } = screenshotPoint(event)
+    translationAreaStart.current = point
+    setTranslationAreaSelection(null)
+    window.getSelection()?.removeAllRanges()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.preventDefault()
+  }
+
+  const moveTranslationArea = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (tool !== 'translate-select' || !translationAreaStart.current) return
+    const { point, stage } = screenshotPoint(event)
+    setTranslationAreaSelection(normalizedSelectionRect(translationAreaStart.current, point, stage.width, stage.height, 1))
+    event.preventDefault()
+  }
+
+  const finishTranslationArea = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (tool !== 'translate-select' || !translationAreaStart.current) return
+    const { point, stage } = screenshotPoint(event)
+    const rect = normalizedSelectionRect(translationAreaStart.current, point, stage.width, stage.height)
+    translationAreaStart.current = null
+    setTranslationAreaSelection(null)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    if (!rect) return
+    const text = textFromTranslationArea(rect, stage)
+    if (!text) {
+      setRenderError('圈選範圍內沒有可辨識的 PDF 文字，請重新圈選文字區域。')
+      return
+    }
+    setRenderError('')
+    const id = crypto.randomUUID()
+    onAddTranslationSelection({
+      id, paperId, pdfPageIndex: pageIndex, order: Date.now(), sourceText: text,
+      sourceHash: `selection:${id}`, lines: [rect], translation: '', model: '', createdAt: new Date().toISOString(), origin: 'selection',
+    })
+    event.preventDefault()
+  }
+
+  const cancelTranslationArea = (event: React.PointerEvent<HTMLDivElement>) => {
+    translationAreaStart.current = null
+    setTranslationAreaSelection(null)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
   }
 
   const screenshotPoint = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -430,7 +582,13 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
   }
 
   return <div className="pdf-page-content">
-    <div className="pdf-canvas-stage" onPointerDown={beginScreenshot} onPointerMove={moveScreenshot} onPointerUp={(event) => { finishScreenshot(event); handleTextSelection() }} onPointerCancel={cancelScreenshot}>
+    <div
+      className="pdf-canvas-stage"
+      onPointerDown={(event) => { beginScreenshot(event); beginTranslationArea(event) }}
+      onPointerMove={(event) => { moveScreenshot(event); moveTranslationArea(event) }}
+      onPointerUp={(event) => { finishScreenshot(event); finishTranslationArea(event); handleTextSelection() }}
+      onPointerCancel={(event) => { cancelScreenshot(event); cancelTranslationArea(event) }}
+    >
       <canvas ref={canvasRef} />
       <div ref={textLayerRef} className="pdf-text-layer" aria-label={`PDF 第 ${pageIndex + 1} 頁文字層`} />
       {highlights.flatMap((highlight) => pageRects(highlight).map((rect, index) => <button
@@ -441,31 +599,58 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
         onClick={(event) => { event.stopPropagation(); if (tool === 'erase') onDeleteHighlight(highlight.id) }}
         style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%`, background: highlightColors[highlight.color] }}
       />))}
-      {translations.filter((translation) => translation.id === activeTranslationId).flatMap((translation) => translation.lines.map((rect, index) => <div
-        key={`${translation.id}-source-${index}`}
-        className="pdf-translation-source-highlight"
-        style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` }}
-      />))}
+      {translations.filter((translation) => translation.id === activeTranslationId).map((translation) => {
+        const rect = boundingRect(translation.lines)
+        return rect ? <div
+          key={`${translation.id}-source`}
+          className="pdf-translation-source-highlight"
+          style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` }}
+        /> : null
+      })}
       {translations.map((translation) => {
         const anchor = translation.lines[0]
         if (!anchor) return null
-        const alignRight = anchor.x > .55
         return <div
           key={translation.id}
-          className={`pdf-translation-anchor${alignRight ? ' align-right' : ''}`}
+          className="pdf-translation-anchor"
           style={{ left: `${Math.max(.008, anchor.x - .035) * 100}%`, top: `${anchor.y * 100}%` }}
-          onMouseEnter={() => setActiveTranslationId(translation.id)}
-          onMouseLeave={() => setActiveTranslationId(null)}
-          onFocus={() => setActiveTranslationId(translation.id)}
-          onBlur={() => setActiveTranslationId(null)}
         >
-          <button className={`pdf-translation-marker${translation.translation ? '' : ' pending'}`} aria-label={translation.translation ? '顯示這一段的中文翻譯' : '顯示待翻譯的圈選文字'} title={translation.translation ? '移入查看中文翻譯' : '待翻譯段落'}>文</button>
-          <div className="pdf-translation-popover" role="group" aria-label="中文翻譯">
-            <div className="pdf-translation-popover-heading"><strong>{translation.translation ? '中文翻譯' : '待翻譯段落'}</strong><button className="danger-link" onClick={(event) => { event.stopPropagation(); onDeleteTranslation(translation.id) }}>清除此段</button></div>
-            <p className={translation.translation ? '' : 'pending-source'}>{translation.translation || translation.sourceText}</p>
-          </div>
+          <button
+            className={`pdf-translation-marker${translation.translation ? '' : ' pending'}`}
+            aria-label={translation.translation ? '開啟這一段的中文翻譯' : '開啟待翻譯的圈選文字'}
+            aria-expanded={Boolean(openTranslationPositions[translation.id])}
+            title={translation.translation ? '移入或點一下開啟中文翻譯' : '待翻譯段落'}
+            onMouseEnter={() => { setActiveTranslationId(translation.id); openTranslation(translation) }}
+            onMouseLeave={() => setActiveTranslationId(null)}
+            onClick={(event) => { event.stopPropagation(); openTranslation(translation) }}
+          >文</button>
         </div>
       })}
+      {translations.filter((translation) => openTranslationPositions[translation.id]).map((translation) => {
+        const position = openTranslationPositions[translation.id]
+        return <div
+          key={`${translation.id}-floating`}
+          className="pdf-translation-floating"
+          role="dialog"
+          aria-label={translation.translation ? '中文翻譯' : '待翻譯段落'}
+          style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div
+            className="pdf-translation-floating-header"
+            onPointerDown={(event) => beginTranslationDrag(event, translation.id)}
+            onPointerMove={moveTranslationDrag}
+            onPointerUp={endTranslationDrag}
+            onPointerCancel={endTranslationDrag}
+          >
+            <strong>{translation.translation ? '中文翻譯' : '待翻譯段落'}</strong>
+            <button className="pdf-translation-floating-close" aria-label="關閉翻譯文字框" title="關閉" onPointerDown={(event) => event.stopPropagation()} onClick={() => closeTranslation(translation.id)}>×</button>
+          </div>
+          <p className={translation.translation ? '' : 'pending-source'}>{translation.translation || translation.sourceText}</p>
+          <button className="danger-link" onClick={(event) => { event.stopPropagation(); closeTranslation(translation.id); onDeleteTranslation(translation.id) }}>清除此段</button>
+        </div>
+      })}
+      {translationAreaSelection && <div className="pdf-translation-area-selection" aria-hidden="true" style={{ left: `${translationAreaSelection.x * 100}%`, top: `${translationAreaSelection.y * 100}%`, width: `${translationAreaSelection.width * 100}%`, height: `${translationAreaSelection.height * 100}%` }} />}
       {screenshotSelection && <div className="pdf-screenshot-selection" aria-hidden="true" style={{ left: `${screenshotSelection.x * 100}%`, top: `${screenshotSelection.y * 100}%`, width: `${screenshotSelection.width * 100}%`, height: `${screenshotSelection.height * 100}%` }} />}
     </div>
     {renderError && <p className="inline-error">{renderError}</p>}

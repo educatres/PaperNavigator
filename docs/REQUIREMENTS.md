@@ -9,7 +9,7 @@
 | FR-05 跨篇比較 | `src/domain/comparison.ts`, `CompareView` |
 | FR-06 第三遍 | `Pass3Result`, `Pass3View`, `pass3Prompt`, `analyzePass3`（第一遍／第二遍／筆記／螢光重點，可重做；完整報告由分頁列在瀏覽器新分頁開啟） |
 | FR-07 Evidence 與 PDF 導航 | `verifyEvidence`, `EvidenceButtons`, `PdfViewer` |
-| FR-07a PDF 逐段翻譯 | `src/pdf/pdfParagraphs.ts`, `paragraphTranslationPrompt`, `PdfViewer` hover popover |
+| FR-07a PDF 區域圈選翻譯 | `pendingSelectedTranslations`, `paragraphTranslationPrompt`, `PdfViewer` rectangular selection + persistent draggable translation box |
 | FR-07b PDF 截圖與收合 | `src/pdf/pdfScreenshot.ts`, `PdfViewer`, `ScreenshotsView` |
 | FR-08 筆記與輸出 | `src/storage/exports.ts`, `NotesView` |
 | FR-09 Key／模型／成本 | `src/ai/providers/provider.ts`, settings panel |
