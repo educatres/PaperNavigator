@@ -18,6 +18,7 @@ describe('project storage migration', () => {
     expect(paper.highlights).toEqual([])
     expect(paper.screenshots).toEqual([])
     expect(paper.pdfTranslations).toEqual([])
+    expect(paper.pdfAreaSummaries).toEqual([])
     expect(paper.floatingNote).toBe('')
     expect(paper.aiRegionSummaries).toEqual([])
   })

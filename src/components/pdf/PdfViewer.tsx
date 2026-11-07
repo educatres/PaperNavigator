@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
-import type { PdfDocumentData, PdfHighlight, PdfHighlightColor, PdfHighlightRect, PdfParagraphTranslation, PdfScreenshot } from '../../domain/types'
+import type { PdfAreaSummary, PdfDocumentData, PdfHighlight, PdfHighlightColor, PdfHighlightRect, PdfParagraphTranslation, PdfScreenshot } from '../../domain/types'
 import { openPdf, renderPdfPage } from '../../pdf/pdfClient'
 import { captureCanvasSelection, normalizedSelectionRect, type DragPoint } from '../../pdf/pdfScreenshot'
 
@@ -10,14 +10,20 @@ interface Props {
   pageIndex: number
   highlights: PdfHighlight[]
   translations: PdfParagraphTranslation[]
+  summaries: PdfAreaSummary[]
   onAddTranslationSelection: (translation: PdfParagraphTranslation) => void
+  onAddSummarySelection: (summary: PdfAreaSummary) => void
   onTranslateSelections: () => void
+  onSummarizeSelections: () => void
   translationRunning: boolean
   translationBlocked: boolean
+  backgroundTask: 'translation' | 'summary' | null
   translationProgressLabel: string
   onCancelTranslation: () => void
   onDeleteTranslation: (id: string) => void
+  onDeleteSummary: (id: string) => void
   onClearTranslations: () => void
+  onClearSummaries: () => void
   onCollapse: () => void
   onPageChange: (pageIndex: number) => void
   onAddHighlight: (highlight: PdfHighlight) => void
@@ -25,7 +31,7 @@ interface Props {
   onAddScreenshot: (screenshot: PdfScreenshot) => void
 }
 
-type PdfTool = 'browse' | 'pan' | 'highlight' | 'translate-select' | 'erase' | 'screenshot'
+type PdfTool = 'browse' | 'pan' | 'highlight' | 'translate-select' | 'summarize-select' | 'erase' | 'screenshot'
 type Zoom = 'fit' | number
 
 interface FloatingTranslationPosition {
@@ -38,6 +44,12 @@ interface TranslationDragState extends FloatingTranslationPosition {
   pointerId: number
   clientX: number
   clientY: number
+}
+
+type PdfAreaAnnotation = PdfParagraphTranslation | PdfAreaSummary
+
+function isAreaSummary(annotation: PdfAreaAnnotation): annotation is PdfAreaSummary {
+  return 'summary' in annotation
 }
 
 const highlightColors: Record<PdfHighlightColor, string> = {
@@ -142,7 +154,7 @@ function selectionElement(node: Node | null) {
   return element?.closest('span') ?? element
 }
 
-export function PdfViewer({ document, paperId, pageIndex, highlights, translations, onAddTranslationSelection, onTranslateSelections, translationRunning, translationBlocked, translationProgressLabel, onCancelTranslation, onDeleteTranslation, onClearTranslations, onCollapse, onPageChange, onAddHighlight, onDeleteHighlight, onAddScreenshot }: Props) {
+export function PdfViewer({ document, paperId, pageIndex, highlights, translations, summaries, onAddTranslationSelection, onAddSummarySelection, onTranslateSelections, onSummarizeSelections, translationRunning, translationBlocked, backgroundTask, translationProgressLabel, onCancelTranslation, onDeleteTranslation, onDeleteSummary, onClearTranslations, onClearSummaries, onCollapse, onPageChange, onAddHighlight, onDeleteHighlight, onAddScreenshot }: Props) {
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const pageNodes = useRef<Record<number, HTMLDivElement | null>>({})
   const visiblePage = useRef(pageIndex)
@@ -236,12 +248,14 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
   const zoomLabel = zoom === 'fit' ? '同寬' : `${Math.round(zoom * 100)}%`
   const pendingSelectionCount = translations.filter((item) => item.origin === 'selection' && !item.translation.trim()).length
   const completedTranslationCount = translations.filter((item) => item.translation.trim()).length
+  const pendingSummaryCount = summaries.filter((item) => !item.summary.trim()).length
+  const completedSummaryCount = summaries.filter((item) => item.summary.trim()).length
 
   return <aside className="pdf-panel" aria-label="PDF 原文檢視器">
     <div className="pdf-toolbar">
       <div>
         <strong>原文 PDF</strong>
-        <span>第 {pageIndex + 1} / {pageCount} 頁 · {highlights.length} 個標記 · {completedTranslationCount} 個翻譯{pendingSelectionCount ? ` · ${pendingSelectionCount} 個待翻譯` : ''} · {zoomLabel}</span>
+        <span>第 {pageIndex + 1} / {pageCount} 頁 · {highlights.length} 個標記 · {completedTranslationCount} 個翻譯 · {completedSummaryCount} 個摘要{pendingSelectionCount ? ` · ${pendingSelectionCount} 個待翻譯` : ''}{pendingSummaryCount ? ` · ${pendingSummaryCount} 個待摘要` : ''} · {zoomLabel}</span>
       </div>
       <div className="toolbar-actions">
         <button className="small-button" onClick={zoomOut} aria-label="縮小">−</button>
@@ -251,12 +265,15 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
         <button className={tool === 'pan' ? 'small-button active' : 'small-button'} onClick={() => switchTool('pan')} aria-pressed={tool === 'pan'} title="按住滑鼠左鍵拖曳來移動 PDF"><span className="tool-icon" aria-hidden="true">✋</span>手掌</button>
         <button className={tool === 'highlight' ? 'small-button active' : 'small-button'} onClick={() => switchTool('highlight')} aria-pressed={tool === 'highlight'} title="選取 PDF 文字並建立螢光標記"><span className="tool-icon" aria-hidden="true">🖍</span>螢光筆</button>
         <button className={tool === 'translate-select' ? 'small-button active' : 'small-button'} onClick={() => switchTool('translate-select')} aria-pressed={tool === 'translate-select'} title="拖曳灰色矩形框住 PDF 文字，加入待翻譯清單"><span className="tool-icon" aria-hidden="true">文</span>圈選翻譯</button>
+        <button className={tool === 'summarize-select' ? 'small-button active' : 'small-button'} onClick={() => switchTool('summarize-select')} aria-pressed={tool === 'summarize-select'} title="拖曳灰色矩形框住 PDF 文字，加入待摘要清單"><span className="tool-icon" aria-hidden="true">摘</span>AI圈選摘要</button>
         <div className="highlight-toolbar-palette" aria-label="螢光筆顏色">{(Object.keys(highlightColors) as PdfHighlightColor[]).map((item) => <button key={item} aria-label={`${colorLabels[item]}色螢光筆`} title={`${colorLabels[item]}色`} className={color === item ? 'active' : ''} style={{ background: highlightColors[item] }} onClick={() => setColor(item)} />)}</div>
         <button className={tool === 'erase' ? 'small-button active' : 'small-button'} onClick={() => switchTool('erase')} aria-pressed={tool === 'erase'} title="點選頁面上的螢光標記即可刪除"><span className="tool-icon" aria-hidden="true">⌫</span>刪除標記</button>
         <button className={tool === 'screenshot' ? 'small-button active' : 'small-button'} onClick={() => switchTool('screenshot')} aria-pressed={tool === 'screenshot'} title="在 PDF 頁面拖曳範圍並保存截圖"><span className="tool-icon" aria-hidden="true">▣</span>圈選截圖</button>
-        {translationRunning && <button className="small-button translation-cancel-button" onClick={onCancelTranslation} title="停止背景圈選翻譯；已完成的譯文會保留"><span className="tool-icon" aria-hidden="true">■</span>停止翻譯</button>}
+        {translationRunning && <button className="small-button translation-cancel-button" onClick={onCancelTranslation} title={`停止背景圈選${backgroundTask === 'summary' ? '摘要' : '翻譯'}；已完成的結果會保留`}><span className="tool-icon" aria-hidden="true">■</span>停止{backgroundTask === 'summary' ? '摘要' : '翻譯'}</button>}
         <button className="small-button selection-translate-button" disabled={translationRunning || translationBlocked || !pendingSelectionCount} onClick={onTranslateSelections} title="把目前圈選的待翻譯段落一起送到背景翻譯">翻譯已選段落（{pendingSelectionCount}）</button>
+        <button className="small-button selection-summary-button" disabled={translationRunning || translationBlocked || !pendingSummaryCount} onClick={onSummarizeSelections} title="把目前圈選的待摘要段落一起送到背景產生摘要">摘要已選段落（{pendingSummaryCount}）</button>
         <button className="small-button" disabled={!translations.length} onClick={onClearTranslations} title="清除這篇論文的全部圈選翻譯">清除圈選翻譯</button>
+        <button className="small-button" disabled={!summaries.length} onClick={onClearSummaries} title="清除這篇論文的全部圈選摘要">清除圈選摘要</button>
         <button className="small-button pdf-collapse-button" onClick={onCollapse} aria-label="收合 PDF Viewer" title="收合 PDF Viewer"><span aria-hidden="true">»</span>收合</button>
       </div>
     </div>
@@ -278,14 +295,17 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
             paperId={paperId}
             highlights={highlights.filter((highlight) => highlight.pdfPageIndex === index)}
             translations={translations.filter((translation) => translation.pdfPageIndex === index)}
+            summaries={summaries.filter((summary) => summary.pdfPageIndex === index)}
             tool={tool}
             color={color}
             viewportWidth={viewportWidth}
             zoom={zoom}
             onAddHighlight={onAddHighlight}
             onAddTranslationSelection={onAddTranslationSelection}
+            onAddSummarySelection={onAddSummarySelection}
             onDeleteHighlight={onDeleteHighlight}
             onDeleteTranslation={onDeleteTranslation}
+            onDeleteSummary={onDeleteSummary}
             onAddScreenshot={onAddScreenshot}
           />
         </div>)}
@@ -294,6 +314,7 @@ export function PdfViewer({ document, paperId, pageIndex, highlights, translatio
     {tool === 'erase' && <div className="pdf-annotation-actions erase-hint"><p>點選頁面上的螢光標記即可刪除，不會影響分析或筆記。</p></div>}
     {tool === 'screenshot' && <div className="pdf-annotation-actions screenshot-hint"><p>在單一 PDF 頁面按住滑鼠左鍵拖曳；放開後，圈選區域會保存到「截圖」分頁。</p></div>}
     {tool === 'translate-select' && <div className="pdf-annotation-actions translation-selection-hint"><p>拖曳灰色空心框圈住文字區域，可連續標記多段；完成後按「翻譯已選段落」一起在背景翻譯。</p><strong>待翻譯 {pendingSelectionCount} 段</strong></div>}
+    {tool === 'summarize-select' && <div className="pdf-annotation-actions summary-selection-hint"><p>拖曳灰色空心框圈住文字區域，可連續標記多段；完成後按「摘要已選段落」一起在背景產生 AI 摘要。</p><strong>待摘要 {pendingSummaryCount} 段</strong></div>}
   </aside>
 }
 
@@ -303,18 +324,21 @@ interface PdfPageProps {
   paperId: string
   highlights: PdfHighlight[]
   translations: PdfParagraphTranslation[]
+  summaries: PdfAreaSummary[]
   tool: PdfTool
   color: PdfHighlightColor
   viewportWidth: number
   zoom: Zoom
   onAddHighlight: (highlight: PdfHighlight) => void
   onAddTranslationSelection: (translation: PdfParagraphTranslation) => void
+  onAddSummarySelection: (summary: PdfAreaSummary) => void
   onDeleteHighlight: (id: string) => void
   onDeleteTranslation: (id: string) => void
+  onDeleteSummary: (id: string) => void
   onAddScreenshot: (screenshot: PdfScreenshot) => void
 }
 
-function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, color, viewportWidth, zoom, onAddHighlight, onAddTranslationSelection, onDeleteHighlight, onDeleteTranslation, onAddScreenshot }: PdfPageProps) {
+function PdfPage({ pdf, pageIndex, paperId, highlights, translations, summaries, tool, color, viewportWidth, zoom, onAddHighlight, onAddTranslationSelection, onAddSummarySelection, onDeleteHighlight, onDeleteTranslation, onDeleteSummary, onAddScreenshot }: PdfPageProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const textLayerRef = useRef<HTMLDivElement | null>(null)
   const [renderError, setRenderError] = useState('')
@@ -325,6 +349,7 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
   const [translationAreaSelection, setTranslationAreaSelection] = useState<PdfHighlightRect | null>(null)
   const screenshotStart = useRef<DragPoint | null>(null)
   const [screenshotSelection, setScreenshotSelection] = useState<PdfHighlightRect | null>(null)
+  const areaAnnotations: PdfAreaAnnotation[] = [...translations, ...summaries]
 
   useEffect(() => {
     if (!canvasRef.current) return
@@ -338,22 +363,24 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
   }, [pdf, pageIndex, viewportWidth, zoom])
 
   useEffect(() => {
-    const available = new Set(translations.map((translation) => translation.id))
+    const available = new Set(areaAnnotations.map((annotation) => annotation.id))
     setOpenTranslationPositions((current) => {
+      if (Object.keys(current).every((id) => available.has(id))) return current
       const next = Object.fromEntries(Object.entries(current).filter(([id]) => available.has(id)))
-      return Object.keys(next).length === Object.keys(current).length ? current : next
+      return next
     })
-  }, [translations])
+  }, [translations, summaries])
 
-  const openTranslation = (translation: PdfParagraphTranslation) => {
-    const anchor = translation.lines[0]
+  const openTranslation = (annotation: PdfAreaAnnotation) => {
+    const anchor = annotation.lines[0]
     if (!anchor) return
     setOpenTranslationPositions((current) => {
-      if (current[translation.id]) return current
+      if (current[annotation.id]) return current
       const boxWidth = canvasRef.current ? Math.min(.52, 340 / canvasRef.current.getBoundingClientRect().width) : .52
       const x = Math.max(.008, Math.min(1 - boxWidth - .008, anchor.x > .55 ? anchor.x - boxWidth : anchor.x))
-      const y = Math.max(.008, Math.min(.72, anchor.y - .22))
-      return { ...current, [translation.id]: { x, y } }
+      const verticalOffset = isAreaSummary(annotation) ? .12 : .22
+      const y = Math.max(.008, Math.min(.72, anchor.y - verticalOffset))
+      return { ...current, [annotation.id]: { x, y } }
     })
   }
 
@@ -493,7 +520,7 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
   }
 
   const beginTranslationArea = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (tool !== 'translate-select' || event.button !== 0) return
+    if ((tool !== 'translate-select' && tool !== 'summarize-select') || event.button !== 0) return
     const target = event.target instanceof Element ? event.target : null
     if (target?.closest('.pdf-translation-anchor, .pdf-translation-floating')) return
     const { point } = screenshotPoint(event)
@@ -505,14 +532,14 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
   }
 
   const moveTranslationArea = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (tool !== 'translate-select' || !translationAreaStart.current) return
+    if ((tool !== 'translate-select' && tool !== 'summarize-select') || !translationAreaStart.current) return
     const { point, stage } = screenshotPoint(event)
     setTranslationAreaSelection(normalizedSelectionRect(translationAreaStart.current, point, stage.width, stage.height, 1))
     event.preventDefault()
   }
 
   const finishTranslationArea = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (tool !== 'translate-select' || !translationAreaStart.current) return
+    if ((tool !== 'translate-select' && tool !== 'summarize-select') || !translationAreaStart.current) return
     const { point, stage } = screenshotPoint(event)
     const rect = normalizedSelectionRect(translationAreaStart.current, point, stage.width, stage.height)
     translationAreaStart.current = null
@@ -526,10 +553,9 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
     }
     setRenderError('')
     const id = crypto.randomUUID()
-    onAddTranslationSelection({
-      id, paperId, pdfPageIndex: pageIndex, order: Date.now(), sourceText: text,
-      sourceHash: `selection:${id}`, lines: [rect], translation: '', model: '', createdAt: new Date().toISOString(), origin: 'selection',
-    })
+    const base = { id, paperId, pdfPageIndex: pageIndex, order: Date.now(), sourceText: text, sourceHash: `selection:${id}`, lines: [rect], model: '', createdAt: new Date().toISOString() }
+    if (tool === 'summarize-select') onAddSummarySelection({ ...base, summary: '' })
+    else onAddTranslationSelection({ ...base, translation: '', origin: 'selection' })
     event.preventDefault()
   }
 
@@ -599,55 +625,62 @@ function PdfPage({ pdf, pageIndex, paperId, highlights, translations, tool, colo
         onClick={(event) => { event.stopPropagation(); if (tool === 'erase') onDeleteHighlight(highlight.id) }}
         style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%`, background: highlightColors[highlight.color] }}
       />))}
-      {translations.filter((translation) => translation.id === activeTranslationId).map((translation) => {
-        const rect = boundingRect(translation.lines)
+      {areaAnnotations.filter((annotation) => annotation.id === activeTranslationId).map((annotation) => {
+        const rect = boundingRect(annotation.lines)
         return rect ? <div
-          key={`${translation.id}-source`}
+          key={`${annotation.id}-source`}
           className="pdf-translation-source-highlight"
           style={{ left: `${rect.x * 100}%`, top: `${rect.y * 100}%`, width: `${rect.width * 100}%`, height: `${rect.height * 100}%` }}
         /> : null
       })}
-      {translations.map((translation) => {
-        const anchor = translation.lines[0]
+      {areaAnnotations.map((annotation) => {
+        const anchor = annotation.lines[0]
         if (!anchor) return null
+        const summary = isAreaSummary(annotation)
+        const output = summary ? annotation.summary : annotation.translation
+        const markerLeft = summary
+          ? (anchor.x >= .075 ? anchor.x - .075 : Math.min(.95, anchor.x + .04))
+          : Math.max(.008, anchor.x - .035)
         return <div
-          key={translation.id}
+          key={annotation.id}
           className="pdf-translation-anchor"
-          style={{ left: `${Math.max(.008, anchor.x - .035) * 100}%`, top: `${anchor.y * 100}%` }}
+          style={{ left: `${markerLeft * 100}%`, top: `${anchor.y * 100}%` }}
         >
           <button
-            className={`pdf-translation-marker${translation.translation ? '' : ' pending'}`}
-            aria-label={translation.translation ? '開啟這一段的中文翻譯' : '開啟待翻譯的圈選文字'}
-            aria-expanded={Boolean(openTranslationPositions[translation.id])}
-            title={translation.translation ? '移入或點一下開啟中文翻譯' : '待翻譯段落'}
-            onMouseEnter={() => { setActiveTranslationId(translation.id); openTranslation(translation) }}
+            className={`pdf-translation-marker${summary ? ' summary' : ''}${output ? '' : ' pending'}`}
+            aria-label={output ? `開啟這一段的${summary ? 'AI 摘要' : '中文翻譯'}` : `開啟待${summary ? '摘要' : '翻譯'}的圈選文字`}
+            aria-expanded={Boolean(openTranslationPositions[annotation.id])}
+            title={output ? `移入或點一下開啟${summary ? 'AI 摘要' : '中文翻譯'}` : `待${summary ? '摘要' : '翻譯'}段落`}
+            onMouseEnter={() => { setActiveTranslationId(annotation.id); openTranslation(annotation) }}
             onMouseLeave={() => setActiveTranslationId(null)}
-            onClick={(event) => { event.stopPropagation(); openTranslation(translation) }}
-          >文</button>
+            onClick={(event) => { event.stopPropagation(); openTranslation(annotation) }}
+          >{summary ? '摘' : '文'}</button>
         </div>
       })}
-      {translations.filter((translation) => openTranslationPositions[translation.id]).map((translation) => {
-        const position = openTranslationPositions[translation.id]
+      {areaAnnotations.filter((annotation) => openTranslationPositions[annotation.id]).map((annotation) => {
+        const position = openTranslationPositions[annotation.id]
+        const summary = isAreaSummary(annotation)
+        const output = summary ? annotation.summary : annotation.translation
         return <div
-          key={`${translation.id}-floating`}
+          key={`${annotation.id}-floating`}
           className="pdf-translation-floating"
           role="dialog"
-          aria-label={translation.translation ? '中文翻譯' : '待翻譯段落'}
+          aria-label={output ? (summary ? 'AI 摘要' : '中文翻譯') : `待${summary ? '摘要' : '翻譯'}段落`}
           style={{ left: `${position.x * 100}%`, top: `${position.y * 100}%` }}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <div
             className="pdf-translation-floating-header"
-            onPointerDown={(event) => beginTranslationDrag(event, translation.id)}
+            onPointerDown={(event) => beginTranslationDrag(event, annotation.id)}
             onPointerMove={moveTranslationDrag}
             onPointerUp={endTranslationDrag}
             onPointerCancel={endTranslationDrag}
           >
-            <strong>{translation.translation ? '中文翻譯' : '待翻譯段落'}</strong>
-            <button className="pdf-translation-floating-close" aria-label="關閉翻譯文字框" title="關閉" onPointerDown={(event) => event.stopPropagation()} onClick={() => closeTranslation(translation.id)}>×</button>
+            <strong>{output ? (summary ? 'AI 摘要' : '中文翻譯') : `待${summary ? '摘要' : '翻譯'}段落`}</strong>
+            <button className="pdf-translation-floating-close" aria-label={`關閉${summary ? '摘要' : '翻譯'}文字框`} title="關閉" onPointerDown={(event) => event.stopPropagation()} onClick={() => closeTranslation(annotation.id)}>×</button>
           </div>
-          <p className={translation.translation ? '' : 'pending-source'}>{translation.translation || translation.sourceText}</p>
-          <button className="danger-link" onClick={(event) => { event.stopPropagation(); closeTranslation(translation.id); onDeleteTranslation(translation.id) }}>清除此段</button>
+          <p className={output ? '' : 'pending-source'}>{output || annotation.sourceText}</p>
+          <button className="danger-link" onClick={(event) => { event.stopPropagation(); closeTranslation(annotation.id); summary ? onDeleteSummary(annotation.id) : onDeleteTranslation(annotation.id) }}>清除此段</button>
         </div>
       })}
       {translationAreaSelection && <div className="pdf-translation-area-selection" aria-hidden="true" style={{ left: `${translationAreaSelection.x * 100}%`, top: `${translationAreaSelection.y * 100}%`, width: `${translationAreaSelection.width * 100}%`, height: `${translationAreaSelection.height * 100}%` }} />}

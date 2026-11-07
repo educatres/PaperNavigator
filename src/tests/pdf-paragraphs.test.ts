@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { groupPdfParagraphRuns, pendingPdfParagraphSources, pendingSelectedTranslations, type PdfParagraphSource, type PdfTextRun } from '../pdf/pdfParagraphs'
-import type { PdfParagraphTranslation } from '../domain/types'
+import { groupPdfParagraphRuns, pendingPdfParagraphSources, pendingSelectedSummaries, pendingSelectedTranslations, type PdfParagraphSource, type PdfTextRun } from '../pdf/pdfParagraphs'
+import type { PdfAreaSummary, PdfParagraphTranslation } from '../domain/types'
 
 function run(text: string, x: number, y: number, width = 200, itemIndex = 0): PdfTextRun {
   return { text, x, y, width, height: 12, itemIndex }
@@ -63,5 +63,10 @@ describe('PDF paragraph translation continuation', () => {
     const completedSelection = { ...translation, id: 'manual-2', origin: 'selection' as const }
 
     expect(pendingSelectedTranslations([translation, pendingSelection, completedSelection]).map((item) => item.id)).toEqual(['manual-1'])
+  })
+
+  it('queues only unfinished area summaries', () => {
+    const summary = { id: 'summary-1', paperId: 'p', pdfPageIndex: 0, order: 0, sourceText: 'Source', sourceHash: 'hash', lines: [], summary: '', model: '', createdAt: '' } satisfies PdfAreaSummary
+    expect(pendingSelectedSummaries([summary, { ...summary, id: 'summary-2', summary: '重點' }]).map((item) => item.id)).toEqual(['summary-1'])
   })
 })

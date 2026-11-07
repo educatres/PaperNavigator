@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChangeEvent, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { PdfViewer } from './components/pdf/PdfViewer'
-import type { AnalysisUsage, Paper, PdfDocumentData, PdfHighlight, PdfParagraphTranslation, PdfScreenshot, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
+import type { AnalysisUsage, Paper, PdfAreaSummary, PdfDocumentData, PdfHighlight, PdfParagraphTranslation, PdfScreenshot, ProjectBundle, ProviderConfig, ProviderId, VerificationStatus } from './domain/types'
 import { analyzePass1, analyzePass2, analyzePass3 } from './ai/orchestrator/analysis'
 import type { FormatRetryHandler } from './ai/orchestrator/analysis'
 import { CGU_BASE_URL, DEFAULT_MODEL_ID, generateText, GOOGLE_BASE_URL, listModels, SUPPORTED_MODEL_IDS, testProviderConnection } from './ai/providers/provider'
-import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, paragraphTranslationPrompt, PASS3_PROMPT_VERSION } from './ai/prompts/prompts'
+import { cleanHighlightResponse, highlightSummaryPrompt, highlightTranslationPrompt, paragraphTranslationPrompt, pdfAreaSummaryPrompt, PASS3_PROMPT_VERSION } from './ai/prompts/prompts'
 import { readPdf } from './pdf/pdfClient'
-import { pendingSelectedTranslations } from './pdf/pdfParagraphs'
+import { pendingSelectedSummaries, pendingSelectedTranslations } from './pdf/pdfParagraphs'
 import { clearBundle, clearPdfDocuments, deletePdfDocument, loadBundle, loadPdfDocuments, saveBundle, savePdfDocument } from './storage/projectStore'
 import { exportPaperMarkdown, exportPass3Html, exportProjectJson, importProjectJson, openFullReportHtml } from './storage/exports'
 import { markdownToHtml, richTextToHtml } from './lib/richText'
@@ -17,6 +17,7 @@ type TabId = 'overview' | 'pass1' | 'pass2' | 'pass3' | 'notes' | 'screenshots'
 
 interface TranslationProgress {
   paperId: string
+  task: 'translation' | 'summary'
   completed: number
   total: number
 }
@@ -56,7 +57,7 @@ function usageText(usage: AnalysisUsage | null) {
 }
 
 function translationProgressText(progress: TranslationProgress) {
-  return `背景翻譯：${progress.completed} / ${progress.total} 個圈選段落`
+  return `背景${progress.task === 'summary' ? '摘要' : '翻譯'}：${progress.completed} / ${progress.total} 個圈選段落`
 }
 
 function formatElapsed(seconds: number) {
@@ -286,7 +287,7 @@ export default function App() {
           id, projectId: bundle.project.id, sha256: data.sha256, filename: data.filename,
           title: data.title, authors: data.author ? data.author.split(/[,;]/).map((item) => item.trim()).filter(Boolean) : [],
           year: null, doi: null, pageCount: data.pageCount, size: data.size, uploadTime: now,
-          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], floatingNote: '', highlights: [], screenshots: [], pdfTranslations: [],
+          tableAnalyses: [], citations: [], evidence: [], observations: [], notes: [], floatingNote: '', highlights: [], screenshots: [], pdfTranslations: [], pdfAreaSummaries: [],
         })
       }
       if (nextPapers.length) {
@@ -442,7 +443,7 @@ export default function App() {
   const translateSelectedParagraphs = () => {
     if (!selectedPaper) { setError('請先選取論文。'); return }
     if (!config.apiKey || !config.modelId) { setSettingsOpen(true); setError('請先輸入 API Key、測試連線並選擇模型。'); return }
-    if (translationAbortRef.current) { setMessage('已有圈選翻譯在背景執行；可先按「停止翻譯」。'); return }
+    if (translationAbortRef.current) { setMessage('已有圈選翻譯或摘要在背景執行；可先按「停止」。'); return }
     const pending = pendingSelectedTranslations(selectedPaper.pdfTranslations ?? [])
     if (!pending.length) { setMessage('目前沒有待翻譯的圈選段落。'); return }
     const paperId = selectedPaper.id
@@ -451,7 +452,7 @@ export default function App() {
     translationAbortMessageRef.current = null
     setError('')
     setMessage(`已在背景開始翻譯 ${pending.length} 個圈選段落；可以繼續閱讀或切換分頁。`)
-    setTranslationProgress({ paperId, completed: 0, total: pending.length })
+    setTranslationProgress({ paperId, task: 'translation', completed: 0, total: pending.length })
     void (async () => {
       let completed = 0
       try {
@@ -468,7 +469,7 @@ export default function App() {
               : current),
           }))
           completed += 1
-          setTranslationProgress({ paperId, completed, total: pending.length })
+          setTranslationProgress({ paperId, task: 'translation', completed, total: pending.length })
           setLastUsage(response.usage)
         }
         setMessage(`圈選段落背景翻譯完成；本次完成 ${completed} 段。`)
@@ -483,10 +484,88 @@ export default function App() {
     })()
   }
 
+  const addPdfSummarySelection = (selection: PdfAreaSummary) => {
+    if (!selectedPaper) return
+    updatePaper(selectedPaper.id, (paper) => ({
+      ...paper,
+      pdfAreaSummaries: [...(paper.pdfAreaSummaries ?? []), selection]
+        .sort((left, right) => left.pdfPageIndex - right.pdfPageIndex || left.order - right.order),
+    }))
+    setMessage('已加入一段待摘要文字；可以繼續圈選其他段落，再一起產生摘要。')
+  }
+
+  const summarizeSelectedAreas = () => {
+    if (!selectedPaper) { setError('請先選取論文。'); return }
+    if (!config.apiKey || !config.modelId) { setSettingsOpen(true); setError('請先輸入 API Key、測試連線並選擇模型。'); return }
+    if (translationAbortRef.current) { setMessage('已有圈選翻譯或摘要在背景執行；可先按「停止」。'); return }
+    const pending = pendingSelectedSummaries(selectedPaper.pdfAreaSummaries ?? [])
+    if (!pending.length) { setMessage('目前沒有待處理的圈選摘要段落。'); return }
+    const paperId = selectedPaper.id
+    const controller = new AbortController()
+    translationAbortRef.current = controller
+    translationAbortMessageRef.current = null
+    setError('')
+    setMessage(`已在背景開始產生 ${pending.length} 個圈選摘要；可以繼續閱讀或切換分頁。`)
+    setTranslationProgress({ paperId, task: 'summary', completed: 0, total: pending.length })
+    void (async () => {
+      let completed = 0
+      try {
+        for (const item of pending) {
+          controller.signal.throwIfAborted()
+          const prompt = pdfAreaSummaryPrompt(item.sourceText)
+          const response = await generateText(config, prompt, controller.signal)
+          controller.signal.throwIfAborted()
+          const summary = cleanHighlightResponse(response.text, prompt, item.sourceText)
+          if (!summary) throw new Error(`第 ${item.pdfPageIndex + 1} 頁的圈選段落沒有取得摘要。`)
+          updatePaper(paperId, (paper) => ({
+            ...paper,
+            pdfAreaSummaries: (paper.pdfAreaSummaries ?? []).map((current) => current.id === item.id
+              ? { ...current, summary, model: `${config.id}:${config.modelId}` }
+              : current),
+          }))
+          completed += 1
+          setTranslationProgress({ paperId, task: 'summary', completed, total: pending.length })
+          setLastUsage(response.usage)
+        }
+        setMessage(`圈選段落背景摘要完成；本次完成 ${completed} 段。`)
+      } catch (value) {
+        if ((value as Error)?.name === 'AbortError') setMessage(translationAbortMessageRef.current ?? `圈選摘要已停止；本次完成的 ${completed} 段已保留，下次可接續。`)
+        else reportError(value)
+      } finally {
+        if (translationAbortRef.current === controller) translationAbortRef.current = null
+        translationAbortMessageRef.current = null
+        setTranslationProgress((current) => current?.paperId === paperId ? null : current)
+      }
+    })()
+  }
+
+  const removePdfSummary = (id: string) => {
+    if (!selectedPaper) return
+    if (translationProgress?.paperId === selectedPaper.id) {
+      translationAbortMessageRef.current = '背景處理已停止，並已清除這一段的摘要註釋。'
+      translationAbortRef.current?.abort()
+    }
+    updatePaper(selectedPaper.id, (paper) => ({ ...paper, pdfAreaSummaries: (paper.pdfAreaSummaries ?? []).filter((item) => item.id !== id) }))
+    setMessage('已清除這一段的摘要註釋。')
+  }
+
+  const clearPdfSummaries = () => {
+    if (!selectedPaper) return
+    const summaries = selectedPaper.pdfAreaSummaries ?? []
+    if (!summaries.length) return
+    if (!window.confirm(`清除這篇論文的全部 ${summaries.length} 個圈選摘要？`)) return
+    if (translationProgress?.paperId === selectedPaper.id) {
+      translationAbortMessageRef.current = '背景處理已停止，並已清除全部圈選摘要註釋。'
+      translationAbortRef.current?.abort()
+    }
+    updatePaper(selectedPaper.id, (paper) => ({ ...paper, pdfAreaSummaries: [] }))
+    setMessage('已清除全部圈選摘要註釋。')
+  }
+
   const removePdfTranslation = (id: string) => {
     if (!selectedPaper) return
     if (translationProgress?.paperId === selectedPaper.id) {
-      translationAbortMessageRef.current = '背景翻譯已停止，並已清除這一段的翻譯註釋。'
+      translationAbortMessageRef.current = '背景處理已停止，並已清除這一段的翻譯註釋。'
       translationAbortRef.current?.abort()
     }
     updatePaper(selectedPaper.id, (paper) => ({ ...paper, pdfTranslations: (paper.pdfTranslations ?? []).filter((item) => item.id !== id) }))
@@ -499,7 +578,7 @@ export default function App() {
     if (!selectedTranslations.length) return
     if (!window.confirm(`清除這篇論文的全部 ${selectedTranslations.length} 個圈選翻譯？`)) return
     if (translationProgress?.paperId === selectedPaper.id) {
-      translationAbortMessageRef.current = '背景翻譯已停止，並已清除全部圈選翻譯註釋。'
+      translationAbortMessageRef.current = '背景處理已停止，並已清除全部圈選翻譯註釋。'
       translationAbortRef.current?.abort()
     }
     updatePaper(selectedPaper.id, (paper) => ({ ...paper, pdfTranslations: (paper.pdfTranslations ?? []).filter((item) => item.origin !== 'selection') }))
@@ -642,7 +721,7 @@ export default function App() {
         <label>模型<select value={config.modelId} disabled={!models.length} onChange={(event) => { setConfig((current) => ({ ...current, modelId: event.target.value })); setConnectionState('idle') }}><option value="">請先讀取模型清單</option>{models.map((model) => <option key={model.id} value={model.id}>{model.id}</option>)}</select></label>
       </div>
       <div className="settings-footer">
-        <p><strong>本機保存：</strong>Provider、Base URL、模型與 API Key 會保留在此瀏覽器；PDF 原檔、分析、螢光標記與圈選翻譯保存在 IndexedDB。資料不會寫入 repository，共用電腦請使用紅色「清除設定」及專案清除功能。</p>
+        <p><strong>本機保存：</strong>Provider、Base URL、模型與 API Key 會保留在此瀏覽器；PDF 原檔、分析、螢光標記、圈選翻譯與圈選摘要保存在 IndexedDB。資料不會寫入 repository，共用電腦請使用紅色「清除設定」及專案清除功能。</p>
         <div className="settings-actions">
           <button className="secondary-button" disabled={!config.apiKey || connectionState === 'testing'} onClick={() => void loadModelList()}>讀取模型清單</button>
           <button className="secondary-button" disabled={!config.apiKey || !config.modelId || connectionState === 'testing'} onClick={() => void testConnection()}>{connectionState === 'ready' ? '✓ 重新測試連線' : '測試連線'}</button>
@@ -703,14 +782,20 @@ export default function App() {
         pageIndex={pageIndex}
         highlights={selectedPaper?.highlights ?? []}
         translations={(selectedPaper?.pdfTranslations ?? []).filter((item) => item.origin === 'selection')}
+        summaries={selectedPaper?.pdfAreaSummaries ?? []}
         onAddTranslationSelection={addPdfTranslationSelection}
+        onAddSummarySelection={addPdfSummarySelection}
         onTranslateSelections={translateSelectedParagraphs}
+        onSummarizeSelections={summarizeSelectedAreas}
         translationRunning={Boolean(translationProgress && translationProgress.paperId === selectedPaper?.id)}
         translationBlocked={Boolean(translationProgress && translationProgress.paperId !== selectedPaper?.id)}
+        backgroundTask={translationProgress && translationProgress.paperId === selectedPaper?.id ? translationProgress.task : null}
         translationProgressLabel={translationProgress && translationProgress.paperId === selectedPaper?.id ? translationProgressText(translationProgress) : ''}
         onCancelTranslation={() => translationAbortRef.current?.abort()}
         onDeleteTranslation={removePdfTranslation}
+        onDeleteSummary={removePdfSummary}
         onClearTranslations={clearPdfTranslations}
+        onClearSummaries={clearPdfSummaries}
         onCollapse={() => setPdfPanelCollapsed(true)}
         onPageChange={setPageIndex}
         onAddHighlight={(highlight: PdfHighlight) => selectedPaper && updatePaper(selectedPaper.id, (paper) => ({ ...paper, highlights: [...paper.highlights, highlight] }))}

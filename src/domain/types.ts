@@ -41,6 +41,19 @@ export interface PdfParagraphTranslation {
   origin?: 'auto' | 'selection'
 }
 
+export interface PdfAreaSummary {
+  id: string
+  paperId: string
+  pdfPageIndex: number
+  order: number
+  sourceText: string
+  sourceHash: string
+  lines: PdfHighlightRect[]
+  summary: string
+  model: string
+  createdAt: string
+}
+
 export interface PdfScreenshot {
   id: string
   paperId: string
@@ -153,6 +166,7 @@ export interface Paper {
   highlights: PdfHighlight[]
   screenshots?: PdfScreenshot[]
   pdfTranslations?: PdfParagraphTranslation[]
+  pdfAreaSummaries?: PdfAreaSummary[]
   /** @deprecated Legacy import compatibility; no longer shown or created. */
   aiRegionSummaries?: AiRegionSummary[]
   analysisModel?: string

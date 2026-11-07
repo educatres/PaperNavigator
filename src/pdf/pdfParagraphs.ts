@@ -1,4 +1,4 @@
-import type { PdfDocumentData, PdfHighlightRect, PdfParagraphTranslation } from '../domain/types'
+import type { PdfAreaSummary, PdfDocumentData, PdfHighlightRect, PdfParagraphTranslation } from '../domain/types'
 import { openPdf } from './pdfClient'
 
 export interface PdfParagraphSource {
@@ -54,6 +54,10 @@ export function pendingPdfParagraphSources(paragraphs: PdfParagraphSource[], tra
 
 export function pendingSelectedTranslations(translations: PdfParagraphTranslation[]) {
   return translations.filter((item) => item.origin === 'selection' && !item.translation.trim())
+}
+
+export function pendingSelectedSummaries(summaries: PdfAreaSummary[]) {
+  return summaries.filter((item) => !item.summary.trim())
 }
 
 // Adapted from the reference reader: lines are grouped within page regions and
